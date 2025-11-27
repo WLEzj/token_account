@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简易记账软件</title>
+    <script src="https://cdn.tailwindcss.com/3.3.3"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    
+    <!-- Tailwind CSS 配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#4F46E5', // 主色调：靛蓝色
+                        secondary: '#10B981', // 辅助色：绿色（收入）
+                        danger: '#EF4444', // 危险色：红色（支出）
+                        neutral: '#6B7280', // 中性色：灰色
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- 外部样式表 -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="min-h-screen">
+    <!-- 顶部导航栏 -->
+    <header class="sticky top-0 z-50 glass-effect border-b border-gray-200">
+        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fas fa-wallet text-primary text-2xl"></i>
+                <h1 class="text-xl font-bold text-gray-800">简易记账</h1>
+            </div>
+            <div class="flex items-center space-x-4">
+                <!-- themeToggle removed -->
+                <div class="flex items-center space-x-2">
+                    <span id="currentUserDisplay" class="text-sm text-gray-600">游客</span>
+                    <button id="logoutBtn" class="hidden text-sm text-red-500 hover:underline">登出</button>
+                </div>
+                <button id="settingsBtn" class="p-2 rounded-full hover:bg-gray-100 transition-custom" title="设置 / 登录">
+                    <i class="fas fa-cog text-gray-600"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 py-6">
+        <!-- 统计卡片区域 -->
+        <section class="mb-8 animate-fadeIn" style="animation-delay: 0.1s;">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- 总资产卡片 -->
+                <div class="bg-white rounded-xl p-6 card-shadow transition-custom hover:shadow-lg">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <p class="text-gray-500 text-sm">总资产</p>
+                            <h2 id="totalBalance" class="text-3xl font-bold text-gray-800 mt-1">¥0.00</h2>
+                        </div>
+                        <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                            <i class="fas fa-coins text-primary"></i>
+                        </div>
+                    </div>
+                    <div class="flex items-center text-sm">
+                        <span class="text-gray-500">本月</span>
+                        <span id="monthChange" class="ml-2 text-secondary">+¥0.00</span>
+                    </div>
+                </div>
+                
+                <!-- 收入卡片 -->
+                <div class="bg-white rounded-xl p-6 card-shadow transition-custom hover:shadow-lg">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <p class="text-gray-500 text-sm">本月收入</p>
+                            <h2 id="monthlyIncome" class="text-3xl font-bold text-secondary mt-1">¥0.00</h2>
+                        </div>
+                        <div class="w-10 h-10 rounded-full bg-secondary/10 flex items-center justify-center">
+                            <i class="fas fa-arrow-down text-secondary"></i>
+                        </div>
+                    </div>
+                    <div class="flex items-center text-sm">
+                        <span class="text-gray-500">较上月</span>
+                        <span id="incomeChange" class="ml-2 text-secondary">+0.00%</span>
+                    </div>
+                </div>
+                
+                <!-- 支出卡片 -->
+                <div class="bg-white rounded-xl p-6 card-shadow transition-custom hover:shadow-lg">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <p class="text-gray-500 text-sm">本月支出</p>
+                            <h2 id="monthlyExpense" class="text-3xl font-bold text-danger mt-1">¥0.00</h2>
+                        </div>
+                        <div class="w-10 h-10 rounded-full bg-danger/10 flex items-center justify-center">
+                            <i class="fas fa-arrow-up text-danger"></i>
+                        </div>
+                    </div>
+                    <div class="flex items-center text-sm">
+                        <span class="text-gray-500">较上月</span>
+                        <span id="expenseChange" class="ml-2 text-danger">+0.00%</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- 预算设置 -->
+        <section class="mb-8 animate-fadeIn" style="animation-delay: 0.15s;">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white rounded-xl p-6 card-shadow h-full">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold text-gray-800">月度预算</h3>
+                        <span id="budgetStatus" class="text-sm text-gray-500">当前预算：¥0.00</span>
+                    </div>
+                    <p id="budgetSummary" class="text-sm text-gray-600 mb-4">本月已支出 ¥0.00，剩余 ¥0.00。</p>
+                    <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                        <div class="relative flex-1">
+                            <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">¥</span>
+                            <input type="number" id="budgetInput" class="w-full pl-8 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none input-focus" placeholder="设置月度预算" min="0" step="0.01">
+                        </div>
+                        <button id="saveBudgetBtn" class="px-5 py-3 bg-secondary text-white font-medium rounded-lg transition-custom hover:bg-secondary/90">保存预算</button>
+                    </div>
+                    <p id="budgetWarning" class="hidden mt-4 text-sm font-medium text-danger"></p>
+                </div>
+
+                <div class="bg-white rounded-xl p-6 card-shadow h-full flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-semibold text-gray-800">数据导出</h3>
+                            <span class="text-sm text-gray-500">下载您的收支记录</span>
+                        </div>
+                        <p class="text-sm text-gray-600">支持将本月及历史交易记录导出为 CSV 或 Excel 文件，方便备份与统计分析。</p>
+                    </div>
+                    <div class="mt-6 flex flex-col sm:flex-row sm:items-center gap-3">
+                        <button id="exportCsvBtn" class="flex-1 px-4 py-3 border border-primary text-primary rounded-lg transition-custom hover:bg-primary hover:text-white">
+                            <i class="fas fa-file-csv mr-2"></i>导出 CSV
+                        </button>
+                        <button id="exportExcelBtn" class="flex-1 px-4 py-3 border border-primary text-primary rounded-lg transition-custom hover:bg-primary hover:text-white">
+                            <i class="fas fa-file-excel mr-2"></i>导出 Excel
+                        </button>
+                    </div>
+                    <!-- 数据备份：手动备份与恢复 -->
+                    <div class="mt-4 border-t pt-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <h4 class="text-sm font-medium text-gray-800">数据备份</h4>
+                            <span id="backupStatus" class="text-xs text-gray-500">未备份</span>
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                            <button id="backupBtn" class="px-4 py-2 bg-primary text-white rounded-lg transition-custom hover:bg-primary/90 flex-1">
+                                <i class="fas fa-database mr-2"></i>手动备份
+                            </button>
+                            <label class="flex-1">
+                                <input type="file" id="restoreFileInput" accept="application/json" class="hidden">
+                                <button id="restoreBtn" type="button" class="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white hover:bg-gray-50">从本地恢复</button>
+                            </label>
+                        </div>
+                        <p id="backupHint" class="text-xs text-gray-500 mt-2">备份为 JSON 文件；恢复会覆盖本地游客数据或尝试导入到您的账户（需登录）。</p>
+                        <!-- 分析按钮已移至页面底部固定浮动按钮 -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 图表区域 -->
+        <section class="mb-8 animate-fadeIn" style="animation-delay: 0.2s;">
+            <!-- 收支趋势图 -->
+            <div class="bg-white rounded-xl p-6 card-shadow mb-6">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
+                    <h3 class="text-lg font-semibold text-gray-800">收支趋势</h3>
+                    <div class="mt-2 md:mt-0 flex space-x-2">
+                        <button class="time-filter-btn px-3 py-1 rounded-full text-sm bg-primary text-white" data-period="month">本月</button>
+                        <button class="time-filter-btn px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-600 hover:bg-gray-200 transition-custom" data-period="quarter">季度</button>
+                        <button class="time-filter-btn px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-600 hover:bg-gray-200 transition-custom" data-period="year">年度</button>
+                    </div>
+                </div>
+                <div class="h-64">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- 图表网格：收支对比和分类统计 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- 月度收支对比柱状图 -->
+                <div class="bg-white rounded-xl p-6 card-shadow">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-6">月度收支对比</h3>
+                    <div class="h-64">
+                        <canvas id="monthlyComparisonChart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- 收支比例饼图 -->
+                <div class="bg-white rounded-xl p-6 card-shadow">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-6">收支比例</h3>
+                    <div class="h-64">
+                        <canvas id="incomeExpenseRatioChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 分类统计图表 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- 收入分类饼图 -->
+                <div class="bg-white rounded-xl p-6 card-shadow">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-6">收入分类</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="h-64">
+                            <canvas id="incomeCategoryChart"></canvas>
+                        </div>
+                        <div class="space-y-3">
+                            <div id="incomeCategoryList" class="max-h-64 overflow-y-auto custom-scrollbar">
+                                <!-- 收入分类列表将通过JavaScript动态生成 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 支出分类饼图 -->
+                <div class="bg-white rounded-xl p-6 card-shadow">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-6">支出分类</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="h-64">
+                            <canvas id="categoryChart"></canvas>
+                        </div>
+                        <div class="space-y-3">
+                            <div id="categoryList" class="max-h-64 overflow-y-auto custom-scrollbar">
+                                <!-- 分类列表将通过JavaScript动态生成 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- 主要内容区域：记账表单和分类统计 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <!-- 左侧：记账表单 -->
+            <div class="lg:col-span-1 animate-fadeIn" style="animation-delay: 0.3s;">
+                <div class="bg-white rounded-xl p-6 card-shadow h-full">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">添加记账</h3>
+                    
+                    <!-- 类型选择 -->
+                    <div class="flex space-x-2 mb-6">
+                        <button id="expenseBtn" class="flex-1 py-3 rounded-lg bg-danger text-white font-medium transition-custom">
+                            <i class="fas fa-minus-circle mr-2"></i>支出
+                        </button>
+                        <button id="incomeBtn" class="flex-1 py-3 rounded-lg bg-gray-100 text-gray-600 font-medium transition-custom">
+                            <i class="fas fa-plus-circle mr-2"></i>收入
+                        </button>
+                    </div>
+                    
+                    <!-- 金额输入 -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">金额</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">¥</span>
+                            <input type="number" id="amountInput" class="w-full pl-8 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none input-focus" placeholder="0.00" step="0.01" min="0">
+                        </div>
+                    </div>
+                    
+                    <!-- 日期选择 -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">日期</label>
+                        <input type="date" id="dateInput" class="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none input-focus">
+                    </div>
+                    
+                    <!-- 分类选择 -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-3">分类</label>
+                        <div id="categoryContainer" class="grid grid-cols-4 gap-2">
+                            <!-- 分类项将通过JavaScript动态生成 -->
+                        </div>
+                    </div>
+                    
+                    <!-- 备注输入 -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">备注</label>
+                        <textarea id="noteInput" rows="2" class="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none input-focus" placeholder="添加备注..."></textarea>
+                    </div>
+                    
+                    <!-- 保存按钮 -->
+                    <button id="saveBtn" class="w-full py-3 bg-primary text-white font-medium rounded-lg transition-custom hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        保存记录
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 右侧：最近交易 -->
+            <div class="lg:col-span-2 animate-fadeIn" style="animation-delay: 0.4s;">
+                <div class="bg-white rounded-xl p-6 card-shadow h-full">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-lg font-semibold text-gray-800">最近交易</h3>
+                        <button id="viewAllBtn" class="text-primary text-sm hover:underline transition-custom">
+                            查看全部
+                        </button>
+                    </div>
+                    <div id="transactionList" class="space-y-4 max-h-80 overflow-y-auto custom-scrollbar">
+                        <!-- 交易记录将通过JavaScript动态生成 -->
+                        <div class="text-center py-10 text-gray-500">
+                            <i class="fas fa-file-invoice-dollar text-4xl mb-3"></i>
+                            <p>暂无交易记录</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- 交易详情模态框 -->
+    <div id="transactionModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4 card-shadow animate-fadeIn">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-gray-800">交易详情</h3>
+                <button id="closeModalBtn" class="text-gray-500 hover:text-gray-700 transition-custom">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="modalContent" class="space-y-4">
+                <!-- 模态框内容将通过JavaScript动态生成 -->
+            </div>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button id="deleteTransactionBtn" class="px-4 py-2 bg-danger text-white rounded-lg transition-custom hover:bg-danger/90">
+                    删除
+                </button>
+                <button id="editTransactionBtn" class="px-4 py-2 bg-primary text-white rounded-lg transition-custom hover:bg-primary/90">
+                    编辑
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 登录/注册模态框 -->
+    <div id="authModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4 card-shadow animate-fadeIn">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-gray-800">用户 设置</h3>
+                <button id="authCloseBtn" class="text-gray-500 hover:text-gray-700 transition-custom">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <div class="flex space-x-2 mb-4">
+                    <button id="authTabLoginBtn" class="flex-1 py-2 rounded-lg bg-primary text-white">登录</button>
+                    <button id="authTabRegisterBtn" class="flex-1 py-2 rounded-lg bg-gray-100 text-gray-600">注册</button>
+                </div>
+
+                <div id="authError" class="text-sm text-danger hidden"></div>
+
+                <form id="loginForm" class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">用户名</label>
+                        <input id="loginUsername" class="w-full px-3 py-2 border rounded" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">密码</label>
+                        <input id="loginPassword" type="password" class="w-full px-3 py-2 border rounded" required>
+                    </div>
+                    <div class="flex justify-end">
+                        <button type="button" id="loginBtn" class="px-4 py-2 bg-primary text-white rounded-lg">登录</button>
+                    </div>
+                </form>
+
+                <form id="registerForm" class="space-y-3 hidden">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">用户名</label>
+                        <input id="registerUsername" class="w-full px-3 py-2 border rounded" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">密码</label>
+                        <input id="registerPassword" type="password" class="w-full px-3 py-2 border rounded" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">确认密码</label>
+                        <input id="registerConfirm" type="password" class="w-full px-3 py-2 border rounded" required>
+                    </div>
+                    <div class="flex justify-end">
+                        <button type="button" id="registerBtn" class="px-4 py-2 bg-secondary text-white rounded-lg">注册</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI 分析模态框 -->
+    <div id="aiModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl p-6 max-w-2xl w-full mx-4 card-shadow animate-fadeIn">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-gray-800">支出分析（AI）</h3>
+                <button id="aiCloseBtn" class="text-gray-500 hover:text-gray-700 transition-custom">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="aiContent" class="prose max-h-72 overflow-y-auto text-sm text-gray-700">
+                <!-- 分析结果将插入此处 -->
+                <p class="text-gray-500">暂无分析结果。请点击“分析支出”以开始。</p>
+            </div>
+            <div class="flex justify-end mt-4">
+                <button id="aiCloseFooterBtn" class="px-4 py-2 bg-gray-100 rounded-lg">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 页面底部浮动分析按钮 -->
+    <div class="fixed bottom-6 right-6 z-60"> 
+        <button id="analyzeBtn" class="flex items-center px-4 py-3 bg-primary text-white rounded-full shadow-lg hover:bg-primary/90 transition-custom">
+            <i class="fas fa-robot mr-2"></i>
+            <span class="hidden sm:inline">分析支出</span>
+        </button>
+    </div>
+
+    <!-- 外部JavaScript文件 -->
+    <script src="app.js"></script>
+</body>
+</html>
+

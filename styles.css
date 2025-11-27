@@ -1,0 +1,121 @@
+/* Tailwind CSS 自定义工具类 */
+@layer utilities {
+    .content-auto {
+        content-visibility: auto;
+    }
+    .card-shadow {
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    }
+    .transition-custom {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-effect {
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+}
+
+/* 基础样式 */
+body {
+    background-color: #F9FAFB;
+    font-family: 'Inter', system-ui, sans-serif;
+}
+
+.category-item {
+    transition: all 0.2s ease;
+}
+
+.category-item:hover, .category-item.active {
+    transform: translateY(-2px);
+}
+
+.input-focus:focus {
+    border-color: #4F46E5;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.transaction-item {
+    transition: all 0.2s ease;
+}
+
+.transaction-item:hover {
+    background-color: #F9FAFB;
+}
+
+/* 自定义滚动条 */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* 动画效果 */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+    animation: fadeIn 0.5s ease forwards;
+}
+
+.skeleton {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: skeleton-loading 1.5s infinite;
+}
+
+@keyframes skeleton-loading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Dark theme variables and overrides */
+:root {
+    --bg: #F9FAFB;
+    --card: #FFFFFF;
+    --text: #111827;
+    --muted: #6B7280;
+    --border: #E5E7EB;
+}
+
+.dark {
+    --bg: #0B1220;
+    --card: #0F1724;
+    --text: #E6EEF8;
+    --muted: #9CA3AF;
+    --border: #1F2937;
+}
+
+body {
+    background-color: var(--bg);
+    color: var(--text);
+}
+
+.card-shadow, .bg-white {
+    background-color: var(--card) !important;
+}
+
+.transaction-item:hover {
+    background-color: rgba(255,255,255,0.02);
+}
+
+.text-gray-500 { color: var(--muted) !important; }
+.text-gray-600 { color: var(--muted) !important; }
+.border-gray-100 { border-color: var(--border) !important; }
+.bg-gray-100 { background-color: rgba(255,255,255,0.02) !important; }
+
+
