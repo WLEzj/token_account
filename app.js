@@ -36,6 +36,29 @@ let currentBudgetAmount = 0; // 当前预算金额
 let currentMonthlyExpense = 0; // 当前月支出总额
 let budgetExceeded = false; // 预算是否超支
 
+// 图表实例占位（初始化后赋值）
+let trendChart = null;
+let categoryChart = null;
+let incomeCategoryChart = null;
+let monthlyComparisonChart = null;
+let incomeExpenseRatioChart = null;
+
+// 金额辅助函数（此前缺失导致渲染报错）
+function parseAmountToCents(value) {
+    const n = Number(value);
+    if (Number.isNaN(n)) return 0;
+    return Math.round(n * 100);
+}
+function centsToNumber(cents) {
+    return (typeof cents === 'number' ? cents : 0) / 100;
+}
+function getAmountCents(t) {
+    if (!t) return 0;
+    if (typeof t.amountCents === 'number') return t.amountCents;
+    if (t.amount != null) return parseAmountToCents(t.amount);
+    return 0;
+}
+
 // 所有金额在前端内部使用整数分 (cents) 进行计算，以避免浮点误差
 
 // DOM 元素获取
@@ -95,120 +118,23 @@ const aiCloseBtn = document.getElementById('aiCloseBtn'); // 关闭AI模态框
 const aiCloseFooterBtn = document.getElementById('aiCloseFooterBtn'); // 底部关闭AI模态框
 const aiContent = document.getElementById('aiContent'); // AI分析内容
 
-// API 配置
-const API_BASE = ''; // API基础路径
-
-// API 请求帮助函数
-function apiFetch(path, options = {}) {
-    const url = (API_BASE || '') + path;
-    const opts = Object.assign({}, options);
-    // 默认包含凭据（session cookie）
-    if (!opts.credentials) opts.credentials = 'include';
-    // 调试日志，用于验证请求URL和凭据
+// API 配置：支持通过 <meta name="api-base" content="https://your-backend.example.com"> 覆盖
+const API_BASE = (function() {
     try {
-        console.log('[apiFetch]', url, opts && Object.assign({}, opts, { body: opts.body ? '[body]' : undefined }));
-    } catch (e) {}
-    return fetch(url, opts).then(res => {
-        try {
-            console.log('[apiFetch res]', url, 'status:', res.status, 'ok:', res.ok);
-        } catch (e) {}
-        // 统一处理会话过期：若返回 401 且当前标记为已登录，则清空前端敏感数据
-        if (res.status === 401 && currentUser) {
-            try {
-                currentUser = null;
-                clearUIAfterLogout();
-                updateAuthUI();
-                showToast('登录已过期，请重新登录');
-            } catch (e) {}
+        const meta = document.querySelector('meta[name="api-base"]');
+        const v = (meta && meta.content ? meta.content : '').trim();
+        if (v) {
+            console.log('[config] Using API_BASE from <meta>:', v);
+            return v;
         }
-        return res;
-    });
-}
+    } catch (e) {}
+    // 默认同源，相对路径
+    return '';
+})();
 
-// ---------- 金额（高精度）辅助函数 ----------
-function parseAmountToCents(value) {
-    // Accept strings like "12.34" or numbers. Return integer cents.
-    const num = Number((value ?? '').toString().trim());
-    if (!isFinite(num) || Number.isNaN(num)) return 0;
-    return Math.round(num * 100);
-}
-
-function centsToNumber(cents) {
-    return Number((cents / 100).toFixed(2));
-}
-
-function formatCurrencyFromCents(cents) {
-    return `¥${(cents / 100).toFixed(2)}`;
-}
-
-function getAmountCents(t) {
-    if (!t) return 0;
-    if (typeof t.amountCents === 'number') return Math.round(t.amountCents);
-    if (typeof t.amount === 'number') return Math.round(Number(t.amount) * 100);
-    // fallback if amount stored as string
-    return parseAmountToCents(t.amount);
-}
-
-// 初始化图表
-let trendChart, categoryChart, incomeCategoryChart, monthlyComparisonChart, incomeExpenseRatioChart;
-
-// 初始化页面
-async function init() {
-    // 从服务器恢复用户状态（如果有），并更新 UI
-    await loadCurrentUserFromServer();
-    updateAuthUI();
-    await loadBudget();
-    renderCategories();
-    updateSaveButtonState();
-    initCharts();
-    
-    // 事件监听器
-    expenseBtn.addEventListener('click', () => setTransactionType('expense'));
-    incomeBtn.addEventListener('click', () => setTransactionType('income'));
-    amountInput.addEventListener('input', updateSaveButtonState);
-    saveBtn.addEventListener('click', saveTransaction);
-    closeModalBtn.addEventListener('click', closeModal);
-    deleteTransactionBtn.addEventListener('click', deleteCurrentTransaction);
-    editTransactionBtn.addEventListener('click', editCurrentTransaction);
-    viewAllBtn.addEventListener('click', viewAllTransactions);
-    // auth events
-    if (settingsBtn) settingsBtn.addEventListener('click', () => openAuthModal());
-    if (authCloseBtn) authCloseBtn.addEventListener('click', () => closeAuthModal());
-    if (authTabLoginBtn) authTabLoginBtn.addEventListener('click', () => switchAuthTab('login'));
-    if (authTabRegisterBtn) authTabRegisterBtn.addEventListener('click', () => switchAuthTab('register'));
-    if (loginBtn) loginBtn.addEventListener('click', () => handleLogin());
-    if (registerBtn) registerBtn.addEventListener('click', () => handleRegister());
-    if (logoutBtn) logoutBtn.addEventListener('click', () => handleLogout());
-    if (saveBudgetBtn) saveBudgetBtn.addEventListener('click', () => handleBudgetSave());
-    if (budgetInput) {
-        budgetInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                handleBudgetSave();
-            }
-        });
-    }
-    if (exportCsvBtn) exportCsvBtn.addEventListener('click', () => handleExport('csv'));
-    if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => handleExport('excel'));
-    if (backupBtn) backupBtn.addEventListener('click', () => handleBackup());
-    if (restoreBtn) restoreBtn.addEventListener('click', () => restoreFileInput.click());
-    if (restoreFileInput) restoreFileInput.addEventListener('change', (e) => handleRestoreFile(e));
-    if (analyzeBtn) analyzeBtn.addEventListener('click', () => analyzeExpenses());
-    if (aiCloseBtn) aiCloseBtn.addEventListener('click', () => aiModal.classList.add('hidden'));
-    if (aiCloseFooterBtn) aiCloseFooterBtn.addEventListener('click', () => aiModal.classList.add('hidden'));
-    
-    // 时间筛选按钮事件
-    timeFilterBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            timeFilterBtns.forEach(b => {
-                b.classList.remove('bg-primary', 'text-white');
-                b.classList.add('bg-gray-100', 'text-gray-600');
-            });
-            btn.classList.remove('bg-gray-100', 'text-gray-600');
-            btn.classList.add('bg-primary', 'text-white');
-            updateTrendChart(btn.dataset.period);
-        });
-    });
+// API 请求辅助：在静态模式下直接抛错，避免误用
+function apiFetch() {
+    return Promise.reject(new Error('静态模式下不可用')); 
 }
 
 async function analyzeExpenses() {
@@ -229,85 +155,117 @@ async function analyzeExpenses() {
     // 禁用触发按钮以防重复请求，并保存原始文本以便恢复
     let prevBtnText = null;
     if (analyzeBtn) {
-        try { prevBtnText = analyzeBtn.textContent; } catch (e) { prevBtnText = null; }
-        analyzeBtn.disabled = true;
-        try { analyzeBtn.textContent = '分析中...'; } catch (e) {}
-    }
-
-    // 使用 AbortController 提供前端超时（15s）
-    const controller = new AbortController();
-    const timeoutMs = 15000;
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-    try {
-        const res = await apiFetch('/api/ai/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ transactions: sample }),
-            signal: controller.signal
+        // 纯静态：从本地存储渲染最近交易
+        transactionList.innerHTML = '';
+        const key = 'transactions_guest';
+        const raw = localStorage.getItem(key);
+        let arr = [];
+        try { arr = raw ? JSON.parse(raw) : []; } catch (e) { arr = []; }
+        if (!Array.isArray(arr)) arr = [];
+        if (arr.length === 0) {
+            transactionList.innerHTML = `
+                <div class="text-center py-10 text-gray-500">
+                    <i class="fas fa-file-invoice-dollar text-4xl mb-3"></i>
+                    <p>暂无交易记录</p>
+                </div>
+            `;
+            updateFinancialSummary();
+            return;
+        }
+        const normalized = arr.map(r => ({
+            id: r.id,
+            type: r.type,
+            amountCents: typeof r.amountCents === 'number' ? r.amountCents : parseAmountToCents(r.amount),
+            amount: centsToNumber(typeof r.amountCents === 'number' ? r.amountCents : parseAmountToCents(r.amount)),
+            date: r.date,
+            category: r.category,
+            note: r.note,
+            createdAt: r.createdAt || r.created_at
+        }));
+        normalized.sort((a,b) => new Date(b.date) - new Date(a.date));
+        const recentTransactions = normalized.slice(0,10);
+        recentTransactions.forEach(transaction => {
+            const transactionItem = document.createElement('div');
+            transactionItem.className = 'transaction-item flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:border-gray-200';
+            transactionItem.dataset.id = transaction.id;
+            const category = transaction.category || {};
+            const isExpense = transaction.type === 'expense';
+            const bg = category.color ? category.color + '20' : '#ddd';
+            const icon = category.icon || 'question-circle';
+            const color = category.color || '#999';
+            const name = category.name || '未分类';
+            transactionItem.innerHTML = `
+                <div class="flex items-center">
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center mr-3" style="background-color: ${bg}">
+                        <i class="fas fa-${icon}" style="color: ${color}"></i>
+                    </div>
+                    <div>
+                        <p class="font-medium">${name}</p>
+                        <p class="text-xs text-gray-500">${formatDate(transaction.date)}</p>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <p class="font-bold ${isExpense ? 'text-danger' : 'text-secondary'}">${isExpense ? '-' : '+'}¥${Number(transaction.amount).toFixed(2)}</p>
+                    ${transaction.note ? `<p class=\"text-xs text-gray-500\">${transaction.note}</p>` : ''}
+                </div>
+            `;
+            transactionItem.addEventListener('click', () => openTransactionModal(transaction.id));
+            transactionList.appendChild(transactionItem);
         });
-
-        clearTimeout(timeoutId);
-
-        if (res.status === 501) {
-            const txt = await res.text();
-            aiContent.innerHTML = `<pre class="whitespace-pre-wrap text-sm text-gray-600">${escapeHtml(txt)}</pre>`;
-            return;
-        }
-
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({ error: '分析失败' }));
-            aiContent.innerHTML = `<p class="text-red-500">分析失败：${escapeHtml(err.error || JSON.stringify(err))}</p>`;
-            // 在失败时提供重试按钮
-            const retryHtml = `
-                <div class="mt-4 flex gap-3">
-                    <button id="aiRetryBtn" class="px-3 py-1 bg-primary text-white rounded">重试</button>
-                    <button id="aiCloseLocalBtn" class="px-3 py-1 border rounded">关闭</button>
-                </div>`;
-            aiContent.innerHTML += retryHtml;
-            const retryBtn = document.getElementById('aiRetryBtn');
-            if (retryBtn) retryBtn.addEventListener('click', () => analyzeExpenses());
-            const closeLocal = document.getElementById('aiCloseLocalBtn');
-            if (closeLocal) closeLocal.addEventListener('click', () => aiModal.classList.add('hidden'));
-            return;
-        }
-
-        const data = await res.json();
-        // 预期 data.text 或 data.segments 之类的结构
-        if (data && data.text) {
-            aiContent.innerHTML = `<div class="prose">${escapeHtml(data.text).replace(/\n/g, '<br/>')}</div>`;
-        } else if (data && data.segments) {
-            aiContent.innerHTML = `<div class="prose">${escapeHtml(JSON.stringify(data.segments, null, 2))}</div>`;
-        } else {
-            aiContent.innerHTML = `<pre class="whitespace-pre-wrap text-sm text-gray-600">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
-        }
-    } catch (e) {
-        clearTimeout(timeoutId);
-        console.error('AI 分析失败', e);
-        // 更明确的错误提示：超时 vs 其它网络错误
-        let userMsg = '';
-        if (e && e.name === 'AbortError') {
-            userMsg = `请求超时（> ${Math.round(timeoutMs/1000)} 秒），请检查网络或稍后重试。`;
-        } else {
-            userMsg = `AI 分析失败：${e && e.message ? e.message : String(e)}`;
-        }
-        aiContent.innerHTML = `<p class="text-red-500">${escapeHtml(userMsg)}</p>`;
-        aiContent.innerHTML += `
-            <div class="mt-4 flex gap-3">
-                <button id="aiRetryBtn" class="px-3 py-1 bg-primary text-white rounded">重试</button>
-                <button id="aiCloseLocalBtn" class="px-3 py-1 border rounded">关闭</button>
-            </div>`;
-        const retryBtn = document.getElementById('aiRetryBtn');
-        if (retryBtn) retryBtn.addEventListener('click', () => analyzeExpenses());
-        const closeLocal = document.getElementById('aiCloseLocalBtn');
-        if (closeLocal) closeLocal.addEventListener('click', () => aiModal.classList.add('hidden'));
-    } finally {
-        // 恢复按钮状态
-        if (analyzeBtn) {
-            analyzeBtn.disabled = false;
-            try { analyzeBtn.textContent = prevBtnText || '分析'; } catch (e) {}
-        }
+        updateFinancialSummary();
     }
+}
+
+// ----------------- 应用初始化（恢复事件绑定与图表/分类渲染） -----------------
+function init() {
+    // 默认类型与分类渲染
+    setTransactionType('expense');
+    renderCategories();
+    updateSaveButtonState();
+
+    // 事件绑定：类型切换
+    if (expenseBtn) expenseBtn.addEventListener('click', () => setTransactionType('expense'));
+    if (incomeBtn) incomeBtn.addEventListener('click', () => setTransactionType('income'));
+
+    // 输入与保存
+    if (amountInput) amountInput.addEventListener('input', updateSaveButtonState);
+    if (saveBtn) saveBtn.addEventListener('click', () => { if (!saveBtn.disabled) saveTransaction(); });
+
+    // 交易模态相关
+    if (closeModalBtn) closeModalBtn.addEventListener('click', closeModal);
+    if (deleteTransactionBtn) deleteTransactionBtn.addEventListener('click', deleteCurrentTransaction);
+    if (editTransactionBtn) editTransactionBtn.addEventListener('click', editCurrentTransaction);
+    if (viewAllBtn) viewAllBtn.addEventListener('click', viewAllTransactions);
+
+    // 时间筛选按钮
+    timeFilterBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            timeFilterBtns.forEach(b => {
+                b.classList.remove('bg-primary', 'text-white');
+                b.classList.add('bg-gray-100', 'text-gray-600');
+            });
+            btn.classList.remove('bg-gray-100', 'text-gray-600');
+            btn.classList.add('bg-primary', 'text-white');
+            updateTrendChart(btn.dataset.period);
+        });
+    });
+
+    // 预算保存与回车快捷
+    if (saveBudgetBtn) saveBudgetBtn.addEventListener('click', handleBudgetSave);
+    if (budgetInput) budgetInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); handleBudgetSave(); } });
+
+    // 导出 / 备份 / 恢复
+    if (exportCsvBtn) exportCsvBtn.addEventListener('click', () => handleExport('csv'));
+    if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => handleExport('excel'));
+    if (backupBtn) backupBtn.addEventListener('click', handleBackup);
+    if (restoreBtn) restoreBtn.addEventListener('click', () => restoreFileInput && restoreFileInput.click());
+    if (restoreFileInput) restoreFileInput.addEventListener('change', handleRestoreFile);
+
+    // 初始化图表与数据
+    initCharts();
+    loadTransactions();
+    loadBudget();
+    updateCharts();
 }
 
 // ----------------- 备份与恢复功能 -----------------
@@ -325,25 +283,11 @@ async function handleBackup() {
 }
 
 async function buildBackupPayload() {
-    // 包含：用户信息（如有）、交易（guest 或 user）、预算（guest 或 user）
-    const payload = { exportedAt: new Date().toISOString(), user: null, transactions: [], budget: 0 };
-    if (currentUser) {
-        payload.user = { id: currentUser.id, username: currentUser.username };
-        // 确保 transactionsCache 已加载
-        if (!transactionsCache || transactionsCache.length === 0) await loadTransactions();
-        payload.transactions = (transactionsCache || []).slice();
-        try {
-            const res = await apiFetch('/api/budget');
-            if (res.ok) {
-                const data = await res.json(); payload.budget = Number(data.amount) || 0;
-            }
-        } catch (e) {}
-    } else {
-        const raw = localStorage.getItem('transactions_guest');
-        payload.transactions = raw ? JSON.parse(raw) : [];
-        const b = localStorage.getItem('budget_guest');
-        payload.budget = b ? Number(b) : 0;
-    }
+    const payload = { exportedAt: new Date().toISOString(), transactions: [], budget: 0 };
+    const raw = localStorage.getItem('transactions_guest');
+    payload.transactions = raw ? JSON.parse(raw) : [];
+    const b = localStorage.getItem('budget_guest');
+    payload.budget = b ? Number(b) : 0;
     return payload;
 }
 
@@ -369,36 +313,12 @@ function handleRestoreFile(e) {
 }
 
 async function importBackupData(json) {
-    // 基本验证
     if (!json || !Array.isArray(json.transactions)) throw new Error('无效备份格式');
     const transactions = json.transactions;
     const budget = Number(json.budget) || 0;
-
-    if (currentUser) {
-        // 登录用户：一次性调用后端批量导入接口以提高效率
-        try {
-            const res = await apiFetch('/api/transactions/import', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ transactions: transactions, mode: 'merge', budget: budget })
-            });
-            if (!res.ok) {
-                let errText = '导入失败';
-                try { const err = await res.json(); errText = err.error || JSON.stringify(err); } catch (e) {}
-                throw new Error(errText);
-            }
-            const data = await res.json();
-            if (backupStatus) backupStatus.textContent = `恢复：导入 ${data.inserted || 0}/${data.total || transactions.length} 条（忽略 ${data.ignored || 0} 条）`;
-        } catch (e) {
-            console.error('批量导入失败', e);
-            showToast('批量导入失败：' + (e && e.message ? e.message : '未知错误'));
-        }
-    } else {
-        // 游客模式：直接覆盖 localStorage
-        localStorage.setItem('transactions_guest', JSON.stringify(transactions));
-        localStorage.setItem('budget_guest', String(budget));
-        if (backupStatus) backupStatus.textContent = `恢复：覆盖游客数据 ${transactions.length} 条`;
-    }
+    localStorage.setItem('transactions_guest', JSON.stringify(transactions));
+    localStorage.setItem('budget_guest', String(budget));
+    if (backupStatus) backupStatus.textContent = `恢复：覆盖本地数据 ${transactions.length} 条`;
 }
 
 // 主题切换逻辑
@@ -553,12 +473,66 @@ function getTransactions() {
 async function loadTransactions() {
     transactionList.innerHTML = '';
     if (!currentUser) {
-        transactionList.innerHTML = `
-            <div class="text-center py-10 text-gray-500">
-                <i class="fas fa-user-clock text-4xl mb-3"></i>
-                <p>请先登录以查看您的交易记录</p>
-            </div>
-        `;
+        // 游客模式：从 localStorage 读取并渲染
+        const key = 'transactions_guest';
+        let arr = [];
+        try {
+            const raw = localStorage.getItem(key);
+            arr = raw ? JSON.parse(raw) : [];
+        } catch (e) {
+            arr = [];
+        }
+        if (!Array.isArray(arr)) arr = [];
+        if (arr.length === 0) {
+            transactionList.innerHTML = `
+                <div class="text-center py-10 text-gray-500">
+                    <i class="fas fa-file-invoice-dollar text-4xl mb-3"></i>
+                    <p>暂无交易记录</p>
+                </div>
+            `;
+            updateFinancialSummary();
+            return;
+        }
+        const normalized = arr.map(r => ({
+            id: r.id,
+            type: r.type,
+            amountCents: typeof r.amountCents === 'number' ? r.amountCents : parseAmountToCents(r.amount),
+            amount: centsToNumber(typeof r.amountCents === 'number' ? r.amountCents : parseAmountToCents(r.amount)),
+            date: r.date,
+            category: r.category,
+            note: r.note,
+            createdAt: r.createdAt || r.created_at
+        }));
+        normalized.sort((a,b) => new Date(b.date) - new Date(a.date));
+        const recentTransactions = normalized.slice(0,10);
+        recentTransactions.forEach(transaction => {
+            const transactionItem = document.createElement('div');
+            transactionItem.className = 'transaction-item flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:border-gray-200';
+            transactionItem.dataset.id = transaction.id;
+            const category = transaction.category || {};
+            const isExpense = transaction.type === 'expense';
+            const bg = category.color ? category.color + '20' : '#ddd';
+            const icon = category.icon || 'question-circle';
+            const color = category.color || '#999';
+            const name = category.name || '未分类';
+            transactionItem.innerHTML = `
+                <div class="flex items-center">
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center mr-3" style="background-color: ${bg}">
+                        <i class="fas fa-${icon}" style="color: ${color}"></i>
+                    </div>
+                    <div>
+                        <p class="font-medium">${name}</p>
+                        <p class="text-xs text-gray-500">${formatDate(transaction.date)}</p>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <p class="font-bold ${isExpense ? 'text-danger' : 'text-secondary'}">${isExpense ? '-' : '+'}¥${Number(transaction.amount).toFixed(2)}</p>
+                    ${transaction.note ? `<p class=\"text-xs text-gray-500\">${transaction.note}</p>` : ''}
+                </div>
+            `;
+            transactionItem.addEventListener('click', () => openTransactionModal(transaction.id));
+            transactionList.appendChild(transactionItem);
+        });
         updateFinancialSummary();
         return;
     }
@@ -673,10 +647,10 @@ function updateFinancialSummary() {
         .filter(t => t.type === 'expense')
         .reduce((sum, t) => sum + t.amount, 0);
     
-    // 更新UI：未登录时显示占位（¥0.00）
-    document.getElementById('totalBalance').textContent = `¥${(currentUser ? centsToNumber(totalBalanceCents) : 0).toFixed(2)}`;
-    document.getElementById('monthlyIncome').textContent = `¥${(currentUser ? centsToNumber(monthlyIncomeCents) : 0).toFixed(2)}`;
-    document.getElementById('monthlyExpense').textContent = `¥${(currentUser ? centsToNumber(monthlyExpenseCents) : 0).toFixed(2)}`;
+    // 纯静态：始终展示本地计算结果
+    document.getElementById('totalBalance').textContent = `¥${centsToNumber(totalBalanceCents).toFixed(2)}`;
+    document.getElementById('monthlyIncome').textContent = `¥${centsToNumber(monthlyIncomeCents).toFixed(2)}`;
+    document.getElementById('monthlyExpense').textContent = `¥${centsToNumber(monthlyExpenseCents).toFixed(2)}`;
     
     // 计算本月变化
     const monthChange = centsToNumber(monthlyIncomeCents - monthlyExpenseCents);
@@ -686,10 +660,10 @@ function updateFinancialSummary() {
     const incomeChange = lastMonthIncome === 0 ? 0 : ((centsToNumber(monthlyIncomeCents) - lastMonthIncome) / lastMonthIncome) * 100;
     const expenseChange = lastMonthExpense === 0 ? 0 : ((centsToNumber(monthlyExpenseCents) - lastMonthExpense) / lastMonthExpense) * 100;
     
-    document.getElementById('incomeChange').textContent = (currentUser ? (incomeChange >= 0 ? `+${incomeChange.toFixed(2)}%` : `${incomeChange.toFixed(2)}%`) : '+0.00%');
-    document.getElementById('expenseChange').textContent = (currentUser ? (expenseChange >= 0 ? `+${expenseChange.toFixed(2)}%` : `${expenseChange.toFixed(2)}%`) : '+0.00%');
+    document.getElementById('incomeChange').textContent = (incomeChange >= 0 ? `+${incomeChange.toFixed(2)}%` : `${incomeChange.toFixed(2)}%`);
+    document.getElementById('expenseChange').textContent = (expenseChange >= 0 ? `+${expenseChange.toFixed(2)}%` : `${expenseChange.toFixed(2)}%`);
 
-    currentMonthlyExpense = currentUser ? centsToNumber(monthlyExpenseCents) : 0;
+    currentMonthlyExpense = centsToNumber(monthlyExpenseCents);
     updateBudgetUI();
 }
 
@@ -873,11 +847,6 @@ function initCharts() {
 
 // 更新图表
 function updateCharts() {
-    // 未登录：清空图表并返回，避免展示任何历史或游客数据
-    if (!currentUser) {
-        resetChartsData();
-        return;
-    }
     updateTrendChart('month');
     updateCategoryChart();
     updateIncomeCategoryChart();
@@ -1117,7 +1086,7 @@ function updateIncomeCategoryChart() {
     });
     
     // 转换为数组并排序
-    const categories = Object.values(categoryStats).sort((a, b) => b.amount - a.amount);
+    const categories = Object.values(categoryStats).sort((a, b) => b.amountCents - a.amountCents);
     
     // 更新图表
     incomeCategoryChart.data.labels = categories.map(c => c.name);
@@ -1141,7 +1110,7 @@ function updateIncomeCategoryChart() {
     const totalIncome = categories.reduce((sum, c) => sum + c.amountCents, 0);
     
     categories.forEach(category => {
-        const percentage = totalIncome > 0 ? (category.amount / totalIncome) * 100 : 0;
+        const percentage = totalIncome > 0 ? (category.amountCents / totalIncome) * 100 : 0;
         const categoryItem = document.createElement('div');
         categoryItem.className = 'flex items-center justify-between';
         
@@ -1259,31 +1228,8 @@ async function handleBudgetSave() {
     }
     const normalized = Math.round(value * 100) / 100;
     try {
-        let persistedAmount = normalized;
-        if (currentUser) {
-            const res = await apiFetch('/api/budget', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount: normalized })
-            });
-            if (!res.ok) {
-                let err = {};
-                try { err = await res.json(); } catch (e) {}
-                showToast(err.error || '保存预算失败');
-                return;
-            }
-            try {
-                const data = await res.json();
-                if (data && typeof data.amount === 'number') {
-                    persistedAmount = Number(data.amount);
-                }
-            } catch (e) {
-                // ignore JSON parse errors, fall back to normalized
-            }
-        } else {
-            localStorage.setItem('budget_guest', String(normalized));
-        }
-        currentBudgetAmount = persistedAmount;
+        localStorage.setItem('budget_guest', String(normalized));
+        currentBudgetAmount = normalized;
         if (budgetInput) budgetInput.value = currentBudgetAmount.toFixed(2);
         updateBudgetUI();
         showToast('预算已更新');
@@ -1345,12 +1291,6 @@ async function handleExport(format) {
 }
 
 async function getTransactionsForExport() {
-    if (currentUser) {
-        if (!transactionsCache || transactionsCache.length === 0) {
-            await loadTransactions();
-        }
-        return { transactions: transactionsCache.slice(), source: 'user' };
-    }
     const key = 'transactions_guest';
     const raw = localStorage.getItem(key);
     if (!raw) return { transactions: [], source: 'guest' };
@@ -1598,6 +1538,33 @@ if (document.readyState === 'loading') {
     init();
 }
 
+// ----------------- 游客初始示例数据（仅在无数据时生成一次） -----------------
+function initializeGuestTransactions() {
+    const key = 'transactions_guest';
+    let existing = [];
+    try { existing = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { existing = []; }
+    if (Array.isArray(existing) && existing.length > 0) return; // 已有数据不覆盖
+    const today = new Date();
+    const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const daysAgo = n => { const d = new Date(today); d.setDate(d.getDate()-n); return d; };
+    const samples = [
+        { type:'income', category: INCOME_CATEGORIES.find(c=>c.id==='salary'), amountCents: 800000, note:'工资', date: fmt(daysAgo(10)) },
+        { type:'expense', category: EXPENSE_CATEGORIES.find(c=>c.id==='food'), amountCents: 4500, note:'午餐', date: fmt(daysAgo(3)) },
+        { type:'expense', category: EXPENSE_CATEGORIES.find(c=>c.id==='transport'), amountCents: 1200, note:'公交', date: fmt(daysAgo(2)) },
+        { type:'expense', category: EXPENSE_CATEGORIES.find(c=>c.id==='shopping'), amountCents: 25900, note:'网购衣物', date: fmt(daysAgo(1)) },
+        { type:'income', category: INCOME_CATEGORIES.find(c=>c.id==='bonus'), amountCents: 200000, note:'季度奖金', date: fmt(daysAgo(5)) }
+    ].map(s => ({
+        id: (Date.now() + Math.random()).toString(),
+        createdAt: new Date().toISOString(),
+        amount: centsToNumber(s.amountCents),
+        ...s
+    }));
+    localStorage.setItem(key, JSON.stringify(samples));
+}
+
+// 在 init 之前调用示例初始化（确保分类常量已可用）
+initializeGuestTransactions();
+
 // 旧的本地认证和存储逻辑已移除，前端现在使用后端 API
 
 // ----------------- 前端 API 辅助函数 -----------------
@@ -1635,80 +1602,22 @@ function updateAuthUI() {
     }
 }
 async function loadCurrentUserFromServer() {
-    try {
-        const res = await apiFetch('/api/current');
-        if (!res.ok) {
-            currentUser = null;
-            clearUIAfterLogout();
-            return;
-        }
-        const data = await res.json();
-        currentUser = data.user || null;
-        if (!currentUser) {
-            clearUIAfterLogout();
-        }
-    } catch (e) {
-        console.error('无法获取当前用户', e);
-        currentUser = null;
-        clearUIAfterLogout();
-    }
+    // 静态模式：始终为游客
+    currentUser = null;
+    updateAuthUI();
 }
 
 async function handleRegister() {
-    const u = registerUsername.value.trim();
-    const p = registerPassword.value;
-    const c = registerConfirm.value;
-    if (!u || !p) { showAuthError('请填写用户名和密码'); return; }
-    if (p !== c) { showAuthError('两次输入的密码不一致'); return; }
-    try {
-    const res = await apiFetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: u, password: p }) });
-    if (!res.ok) { let err = {}; try { err = await res.json(); } catch(e) {} showAuthError(err.error || '注册失败'); return; }
-    let data = {};
-    try { data = await res.json(); } catch(e) { data = {}; }
-        currentUser = { id: data.id, username: data.username };
-        closeAuthModal();
-        updateAuthUI();
-        await loadTransactions();
-        await loadBudget();
-        showToast('注册并登录成功');
-    } catch (e) {
-        console.error(e);
-        showAuthError('注册失败');
-    }
+    showAuthError('静态模式：不支持注册');
 }
 
 async function handleLogin() {
-    const u = loginUsername.value.trim();
-    const p = loginPassword.value;
-    if (!u || !p) { showAuthError('请填写用户名和密码'); return; }
-    try {
-    const res = await apiFetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: u, password: p }) });
-    if (!res.ok) { let err = {}; try { err = await res.json(); } catch(e) {} showAuthError(err.error || '登录失败'); return; }
-    let data = {};
-    try { data = await res.json(); } catch(e) { data = {}; }
-        currentUser = { id: data.id, username: data.username };
-        closeAuthModal();
-        updateAuthUI();
-        await loadTransactions();
-        await loadBudget();
-        updateCharts();
-        showToast('登录成功');
-    } catch (e) {
-        console.error(e);
-        showAuthError('登录失败');
-    }
+    showAuthError('静态模式：不支持登录');
 }
 
 async function handleLogout() {
-    try {
-        await apiFetch('/api/logout', { method: 'POST' });
-    } catch (e) {
-        // 忽略网络错误，继续执行本地清理
-    }
-    currentUser = null;
-    clearUIAfterLogout();
-    updateAuthUI();
-    showToast('已登出');
+    // 游客模式无登出概念
+    showToast('静态模式：无登录状态');
 }
 
 // 登出后清空页面中的交易、预算与图表，避免数据泄露
@@ -1724,8 +1633,8 @@ function clearUIAfterLogout() {
         if (transactionList) {
             transactionList.innerHTML = `
                 <div class="text-center py-10 text-gray-500">
-                    <i class="fas fa-user-clock text-4xl mb-3"></i>
-                    <p>请先登录以查看您的交易记录</p>
+                    <i class="fas fa-file-invoice-dollar text-4xl mb-3"></i>
+                    <p>暂无交易记录</p>
                 </div>
             `;
         }
@@ -1764,21 +1673,16 @@ function clearUIAfterLogout() {
 }
 
 async function createTransaction(t) {
-    const res = await apiFetch('/api/transactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(t) });
-    if (!res.ok) throw new Error('create failed');
-    return await res.json();
+    // 不调用后端；直接返回本地对象
+    return t;
 }
 
 async function updateTransaction(id, t) {
-    const res = await apiFetch(`/api/transactions/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(t) });
-    if (!res.ok) throw new Error('update failed');
-    return await res.json();
+    return { id, ...t }; // 静态模式占位
 }
 
 async function deleteTransactionById(id) {
-    const res = await apiFetch(`/api/transactions/${id}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('delete failed');
-    return await res.json();
+    return { ok: true }; // 静态模式占位
 }
 
 

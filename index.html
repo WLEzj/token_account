@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>简易记账软件</title>
+        <!-- 若前端与后端跨域部署（如 GitHub Pages + Render/Railway），请设置下方 api-base 为后端根地址：
+            例： https://your-service.onrender.com 或 https://your-subdomain.railway.app -->
+        <meta name="api-base" content="">
     <script src="https://cdn.tailwindcss.com/3.3.3"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
@@ -42,11 +45,8 @@
                 <!-- themeToggle removed -->
                 <div class="flex items-center space-x-2">
                     <span id="currentUserDisplay" class="text-sm text-gray-600">游客</span>
-                    <button id="logoutBtn" class="hidden text-sm text-red-500 hover:underline">登出</button>
                 </div>
-                <button id="settingsBtn" class="p-2 rounded-full hover:bg-gray-100 transition-custom" title="设置 / 登录">
-                    <i class="fas fa-cog text-gray-600"></i>
-                </button>
+                <!-- 纯静态模式：移除设置/登录入口 -->
             </div>
         </div>
     </header>
@@ -334,7 +334,7 @@
     
     <!-- 登录/注册模态框 -->
     <div id="authModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
-        <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4 card-shadow animate-fadeIn">
+            <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4 card-shadow animate-fadeIn">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-semibold text-gray-800">用户 设置</h3>
                 <button id="authCloseBtn" class="text-gray-500 hover:text-gray-700 transition-custom">
@@ -386,7 +386,7 @@
 
     <!-- AI 分析模态框 -->
     <div id="aiModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
-        <div class="bg-white rounded-xl p-6 max-w-2xl w-full mx-4 card-shadow animate-fadeIn">
+            <div class="hidden">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-semibold text-gray-800">支出分析（AI）</h3>
                 <button id="aiCloseBtn" class="text-gray-500 hover:text-gray-700 transition-custom">
@@ -403,13 +403,7 @@
         </div>
     </div>
 
-    <!-- 页面底部浮动分析按钮 -->
-    <div class="fixed bottom-6 right-6 z-60"> 
-        <button id="analyzeBtn" class="flex items-center px-4 py-3 bg-primary text-white rounded-full shadow-lg hover:bg-primary/90 transition-custom">
-            <i class="fas fa-robot mr-2"></i>
-            <span class="hidden sm:inline">分析支出</span>
-        </button>
-    </div>
+    <!-- 浮动分析按钮移除（纯静态模式） -->
 
     <!-- 外部JavaScript文件 -->
     <script src="app.js"></script>

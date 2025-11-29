@@ -6,12 +6,7 @@ async function main() {
   const username = 'u' + Date.now();
   const password = 'P@ssw0rd';
 
-  console.log('Registering user:', username);
-  const regRes = await fetch(base + '/api/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
-  });
+  // 纯静态模式：不再进行后端 API 测试。
   const regText = await regRes.text();
   console.log('Register status:', regRes.status, regText);
 
