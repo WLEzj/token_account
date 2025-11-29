@@ -96,25 +96,6 @@ let allPage = 1;
 let allPageSize = 10;
 const timeFilterBtns = document.querySelectorAll('.time-filter-btn'); // 时间筛选按钮
 
-// 用户认证相关元素
-const settingsBtn = document.getElementById('settingsBtn'); // 设置/登录按钮
-const authModal = document.getElementById('authModal'); // 认证模态框
-const authCloseBtn = document.getElementById('authCloseBtn'); // 关闭认证模态框
-const authTabLoginBtn = document.getElementById('authTabLoginBtn'); // 登录标签
-const authTabRegisterBtn = document.getElementById('authTabRegisterBtn'); // 注册标签
-const loginForm = document.getElementById('loginForm'); // 登录表单
-const registerForm = document.getElementById('registerForm'); // 注册表单
-const loginBtn = document.getElementById('loginBtn'); // 登录按钮
-const registerBtn = document.getElementById('registerBtn'); // 注册按钮
-const loginUsername = document.getElementById('loginUsername'); // 登录用户名输入
-const loginPassword = document.getElementById('loginPassword'); // 登录密码输入
-const registerUsername = document.getElementById('registerUsername'); // 注册用户名输入
-const registerPassword = document.getElementById('registerPassword'); // 注册密码输入
-const registerConfirm = document.getElementById('registerConfirm'); // 确认密码输入
-const authError = document.getElementById('authError'); // 认证错误信息
-const currentUserDisplay = document.getElementById('currentUserDisplay'); // 当前用户显示
-const logoutBtn = document.getElementById('logoutBtn'); // 登出按钮
-
 // 预算相关元素
 const budgetStatus = document.getElementById('budgetStatus'); // 预算状态
 const budgetSummary = document.getElementById('budgetSummary'); // 预算摘要
@@ -129,111 +110,6 @@ const backupBtn = document.getElementById('backupBtn'); // 备份按钮
 const restoreBtn = document.getElementById('restoreBtn'); // 恢复按钮
 const restoreFileInput = document.getElementById('restoreFileInput'); // 恢复文件输入
 const backupStatus = document.getElementById('backupStatus'); // 备份状态
-
-// AI 分析元素
-const analyzeBtn = document.getElementById('analyzeBtn'); // AI分析按钮
-const aiModal = document.getElementById('aiModal'); // AI分析模态框
-const aiCloseBtn = document.getElementById('aiCloseBtn'); // 关闭AI模态框
-const aiCloseFooterBtn = document.getElementById('aiCloseFooterBtn'); // 底部关闭AI模态框
-const aiContent = document.getElementById('aiContent'); // AI分析内容
-
-// API 配置：支持通过 <meta name="api-base" content="https://your-backend.example.com"> 覆盖
-const API_BASE = (function() {
-    try {
-        const meta = document.querySelector('meta[name="api-base"]');
-        const v = (meta && meta.content ? meta.content : '').trim();
-        if (v) {
-            console.log('[config] Using API_BASE from <meta>:', v);
-            return v;
-        }
-    } catch (e) {}
-    // 默认同源，相对路径
-    return '';
-})();
-
-// API 请求辅助：在静态模式下直接抛错，避免误用
-function apiFetch() {
-    return Promise.reject(new Error('静态模式下不可用')); 
-}
-
-async function analyzeExpenses() {
-    // 收集最近的交易（优先登录用户数据，否则用 local guest）
-    const { transactions } = await getTransactionsForExport();
-    if (!transactions || transactions.length === 0) {
-        aiContent.innerHTML = '<p class="text-gray-500">暂无交易可分析。</p>';
-        aiModal.classList.remove('hidden');
-        return;
-    }
-
-    // 准备要发送给后端的精简数据（减小 payload）
-    const sample = transactions.slice(0, 200).map(t => ({ date: t.date, type: t.type, amount: t.amount ?? (t.amountCents ? (t.amountCents/100) : 0), category: t.category ? t.category.name : '', note: t.note }));
-    // 显示 loading 状态并打开模态
-    aiContent.innerHTML = '<p class="text-gray-500">正在分析（这可能需要几秒钟）...</p>';
-    aiModal.classList.remove('hidden');
-
-    // 禁用触发按钮以防重复请求，并保存原始文本以便恢复
-    let prevBtnText = null;
-    if (analyzeBtn) {
-        // 纯静态：从本地存储渲染最近交易
-        transactionList.innerHTML = '';
-        const key = 'transactions_guest';
-        const raw = localStorage.getItem(key);
-        let arr = [];
-        try { arr = raw ? JSON.parse(raw) : []; } catch (e) { arr = []; }
-        if (!Array.isArray(arr)) arr = [];
-        if (arr.length === 0) {
-            transactionList.innerHTML = `
-                <div class="text-center py-10 text-gray-500">
-                    <i class="fas fa-file-invoice-dollar text-4xl mb-3"></i>
-                    <p>暂无交易记录</p>
-                </div>
-            `;
-            updateFinancialSummary();
-            return;
-        }
-        const normalized = arr.map(r => ({
-            id: r.id,
-            type: r.type,
-            amountCents: typeof r.amountCents === 'number' ? r.amountCents : parseAmountToCents(r.amount),
-            amount: centsToNumber(typeof r.amountCents === 'number' ? r.amountCents : parseAmountToCents(r.amount)),
-            date: r.date,
-            category: r.category,
-            note: r.note,
-            createdAt: r.createdAt || r.created_at
-        }));
-        normalized.sort((a,b) => new Date(b.date) - new Date(a.date));
-        const recentTransactions = normalized.slice(0,10);
-        recentTransactions.forEach(transaction => {
-            const transactionItem = document.createElement('div');
-            transactionItem.className = 'transaction-item flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:border-gray-200';
-            transactionItem.dataset.id = transaction.id;
-            const category = transaction.category || {};
-            const isExpense = transaction.type === 'expense';
-            const bg = category.color ? category.color + '20' : '#ddd';
-            const icon = category.icon || 'question-circle';
-            const color = category.color || '#999';
-            const name = category.name || '未分类';
-            transactionItem.innerHTML = `
-                <div class="flex items-center">
-                    <div class="w-10 h-10 rounded-full flex items-center justify-center mr-3" style="background-color: ${bg}">
-                        <i class="fas fa-${icon}" style="color: ${color}"></i>
-                    </div>
-                    <div>
-                        <p class="font-medium">${name}</p>
-                        <p class="text-xs text-gray-500">${formatDate(transaction.date)}</p>
-                    </div>
-                </div>
-                <div class="text-right">
-                    <p class="font-bold ${isExpense ? 'text-danger' : 'text-secondary'}">${isExpense ? '-' : '+'}¥${Number(transaction.amount).toFixed(2)}</p>
-                    ${transaction.note ? `<p class=\"text-xs text-gray-500\">${transaction.note}</p>` : ''}
-                </div>
-            `;
-            transactionItem.addEventListener('click', () => openTransactionModal(transaction.id));
-            transactionList.appendChild(transactionItem);
-        });
-        updateFinancialSummary();
-    }
-}
 
 // ----------------- 应用初始化（恢复事件绑定与图表/分类渲染） -----------------
 function init() {
@@ -355,9 +231,6 @@ async function importBackupData(json) {
     if (backupStatus) backupStatus.textContent = `恢复：覆盖本地数据 ${transactions.length} 条`;
 }
 
-// 主题切换逻辑
-
-
 // 设置交易类型
 function setTransactionType(type) {
     currentType = type;
@@ -412,7 +285,7 @@ function updateSaveButtonState() {
     saveBtn.disabled = isNaN(amount) || amount <= 0 || !selectedCategory;
 }
 
-// 保存交易（如已登录通过 API，否则写入本地 guest）
+// 保存交易
 async function saveTransaction() {
     const amountInputValue = amountInput.value;
     const amountCents = parseAmountToCents(amountInputValue);
@@ -424,7 +297,6 @@ async function saveTransaction() {
 
     const payload = {
         type: currentType,
-        // send amount as normalized number with two decimals so server storage remains compatible
         amount: amount,
         date: date,
         category: category,
@@ -448,11 +320,9 @@ async function saveTransaction() {
                 });
             }
         } else {
-            // 游客模式：保存在 localStorage guest 键
             const key = 'transactions_guest';
             const raw = localStorage.getItem(key);
             const arr = raw ? JSON.parse(raw) : [];
-            // store amount in cents to avoid float precision problems
             arr.push({ id: Date.now().toString(), ...payload, amountCents: amountCents, createdAt: new Date().toISOString() });
             localStorage.setItem(key, JSON.stringify(arr));
         }
@@ -503,7 +373,6 @@ function getTransactions() {
 }
 
 // 加载交易记录
-// 加载交易：如果登录则从服务器拉取并渲染，否则从本地 guest 渲染
 async function loadTransactions() {
     transactionList.innerHTML = '';
     if (!currentUser) {
@@ -570,73 +439,6 @@ async function loadTransactions() {
         updateFinancialSummary();
         return;
     }
-
-    // 登录用户：从服务器拉取
-    try {
-    const res = await apiFetch('/api/transactions');
-        if (!res.ok) {
-            let errMsg = '加载失败';
-            try { const err = await res.json(); errMsg = err.error || JSON.stringify(err); } catch(e) {}
-            throw new Error(`fetch failed: ${res.status} ${errMsg}`);
-        }
-        const data = await res.json();
-        transactionsCache = data.transactions.map(r => ({
-            id: r.id,
-            type: r.type,
-            // keep original amount field for compatibility, but also compute integer cents for calculations
-            amount: Number(r.amount),
-            amountCents: Math.round(Number(r.amount) * 100),
-            date: r.date,
-            category: { id: r.category_id, name: r.category_name, color: r.category_color, icon: r.category_icon },
-            note: r.note,
-            createdAt: r.created_at
-        }));
-        // 渲染
-        if (transactionsCache.length === 0) {
-            transactionList.innerHTML = `
-                <div class="text-center py-10 text-gray-500">
-                    <i class="fas fa-file-invoice-dollar text-4xl mb-3"></i>
-                    <p>暂无交易记录</p>
-                </div>
-            `;
-            updateFinancialSummary();
-            return;
-        }
-        transactionsCache.sort((a,b) => new Date(b.date) - new Date(a.date));
-        const recentTransactions = transactionsCache.slice(0,10);
-        recentTransactions.forEach(transaction => {
-            const transactionItem = document.createElement('div');
-            transactionItem.className = 'transaction-item flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:border-gray-200';
-            transactionItem.dataset.id = transaction.id;
-            const category = transaction.category;
-            const isExpense = transaction.type === 'expense';
-            transactionItem.innerHTML = `
-                <div class="flex items-center">
-                    <div class="w-10 h-10 rounded-full flex items-center justify-center mr-3" style="background-color: ${category.color}20">
-                        <i class="fas fa-${category.icon}" style="color: ${category.color}"></i>
-                    </div>
-                    <div>
-                        <p class="font-medium">${category.name}</p>
-                        <p class="text-xs text-gray-500">${formatDate(transaction.date)}</p>
-                    </div>
-                </div>
-                <div class="text-right">
-                    <p class="font-bold ${isExpense ? 'text-danger' : 'text-secondary'}">${isExpense ? '-' : '+'}¥${transaction.amount.toFixed(2)}</p>
-                    ${transaction.note ? `<p class="text-xs text-gray-500">${transaction.note}</p>` : ''}
-                </div>
-            `;
-            transactionItem.addEventListener('click', () => openTransactionModal(transaction.id));
-            transactionList.appendChild(transactionItem);
-        });
-        updateFinancialSummary();
-    } catch (e) {
-        console.error(e);
-        transactionList.innerHTML = `
-            <div class="text-center py-10 text-gray-500">
-                <p>加载交易失败：${e.message}</p>
-            </div>
-        `;
-    }
 }
 
 // 更新财务摘要
@@ -681,7 +483,7 @@ function updateFinancialSummary() {
         .filter(t => t.type === 'expense')
         .reduce((sum, t) => sum + t.amount, 0);
     
-    // 纯静态：始终展示本地计算结果
+    // 始终展示本地计算结果
     document.getElementById('totalBalance').textContent = `¥${centsToNumber(totalBalanceCents).toFixed(2)}`;
     document.getElementById('monthlyIncome').textContent = `¥${centsToNumber(monthlyIncomeCents).toFixed(2)}`;
     document.getElementById('monthlyExpense').textContent = `¥${centsToNumber(monthlyExpenseCents).toFixed(2)}`;
@@ -1308,10 +1110,6 @@ function updateBudgetUI() {
 
 async function handleExport(format) {
     const { transactions, source } = await getTransactionsForExport();
-    if (!currentUser && source !== 'guest') {
-        showToast('请先登录以导出数据');
-        return;
-    }
     if (!transactions || transactions.length === 0) {
         showToast('暂无可导出的交易数据');
         return;
@@ -1727,12 +1525,14 @@ function showToast(message) {
     }, 2000);
 }
 
-// 点击模态框外部关闭
-transactionModal.addEventListener('click', (e) => {
-    if (e.target === transactionModal) {
-        closeModal();
-    }
-});
+// 点击模态框外部关闭（防止元素缺失导致报错）
+if (transactionModal) {
+    transactionModal.addEventListener('click', (e) => {
+        if (e.target === transactionModal) {
+            closeModal();
+        }
+    });
+}
 
 // 初始化应用：如果文档已就绪则直接执行，否则等待 DOMContentLoaded
 if (document.readyState === 'loading') {
@@ -1767,125 +1567,3 @@ function initializeGuestTransactions() {
 
 // 在 init 之前调用示例初始化（确保分类常量已可用）
 initializeGuestTransactions();
-
-// 旧的本地认证和存储逻辑已移除，前端现在使用后端 API
-
-// ----------------- 前端 API 辅助函数 -----------------
-function showAuthError(msg) { if (authError) { authError.textContent = msg; authError.classList.remove('hidden'); } }
-
-function openAuthModal() {
-    if (authError) authError.classList.add('hidden');
-    if (authModal) authModal.classList.remove('hidden');
-    switchAuthTab('login');
-}
-
-function closeAuthModal() { if (authModal) authModal.classList.add('hidden'); }
-
-function switchAuthTab(tab) {
-    if (tab === 'login') {
-        if (loginForm) loginForm.classList.remove('hidden');
-        if (registerForm) registerForm.classList.add('hidden');
-        if (authTabLoginBtn) { authTabLoginBtn.classList.add('bg-primary', 'text-white'); authTabLoginBtn.classList.remove('bg-gray-100', 'text-gray-600'); }
-        if (authTabRegisterBtn) { authTabRegisterBtn.classList.remove('bg-secondary', 'text-white'); authTabRegisterBtn.classList.add('bg-gray-100', 'text-gray-600'); }
-    } else {
-        if (loginForm) loginForm.classList.add('hidden');
-        if (registerForm) registerForm.classList.remove('hidden');
-        if (authTabRegisterBtn) { authTabRegisterBtn.classList.add('bg-secondary', 'text-white'); authTabRegisterBtn.classList.remove('bg-gray-100', 'text-gray-600'); }
-        if (authTabLoginBtn) { authTabLoginBtn.classList.remove('bg-primary', 'text-white'); authTabLoginBtn.classList.add('bg-gray-100', 'text-gray-600'); }
-    }
-}
-
-function updateAuthUI() {
-    if (currentUser) {
-        if (currentUserDisplay) currentUserDisplay.textContent = currentUser.username;
-        if (logoutBtn) logoutBtn.classList.remove('hidden');
-    } else {
-        if (currentUserDisplay) currentUserDisplay.textContent = '游客';
-        if (logoutBtn) logoutBtn.classList.add('hidden');
-    }
-}
-async function loadCurrentUserFromServer() {
-    // 静态模式：始终为游客
-    currentUser = null;
-    updateAuthUI();
-}
-
-async function handleRegister() {
-    showAuthError('静态模式：不支持注册');
-}
-
-async function handleLogin() {
-    showAuthError('静态模式：不支持登录');
-}
-
-async function handleLogout() {
-    // 游客模式无登出概念
-    showToast('静态模式：无登录状态');
-}
-
-// 登出后清空页面中的交易、预算与图表，避免数据泄露
-function clearUIAfterLogout() {
-    try {
-        // 清空内存缓存与状态
-        transactionsCache = [];
-        currentMonthlyExpense = 0;
-        currentBudgetAmount = 0;
-        budgetExceeded = false;
-
-        // 清空交易列表并显示登录提示
-        if (transactionList) {
-            transactionList.innerHTML = `
-                <div class="text-center py-10 text-gray-500">
-                    <i class="fas fa-file-invoice-dollar text-4xl mb-3"></i>
-                    <p>暂无交易记录</p>
-                </div>
-            `;
-        }
-
-        // 置零关键统计
-        const zeroCurrency = '¥0.00';
-        const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
-        setText('totalBalance', zeroCurrency);
-        setText('monthlyIncome', zeroCurrency);
-        setText('monthlyExpense', zeroCurrency);
-        setText('monthChange', '+¥0.00');
-        setText('incomeChange', '+0.00%');
-        setText('expenseChange', '+0.00%');
-
-        // 清空预算输入与摘要
-        if (budgetInput && document.activeElement !== budgetInput) {
-            budgetInput.value = '';
-        }
-        if (budgetStatus) budgetStatus.textContent = `当前预算：${zeroCurrency}`;
-        if (budgetSummary) {
-            budgetSummary.textContent = `尚未设置预算。本月已支出 ¥0.00。`;
-            budgetSummary.classList.remove('text-danger');
-        }
-        if (budgetWarning) budgetWarning.classList.add('hidden');
-
-        // 清空图表
-        resetChartsData();
-
-        // 关闭并清空 AI 模态
-        if (aiModal) aiModal.classList.add('hidden');
-        if (aiContent) aiContent.innerHTML = '';
-    } catch (e) {
-        // 安静失败，避免打断登出流程
-        console.warn('清空界面失败', e);
-    }
-}
-
-async function createTransaction(t) {
-    // 不调用后端；直接返回本地对象
-    return t;
-}
-
-async function updateTransaction(id, t) {
-    return { id, ...t }; // 静态模式占位
-}
-
-async function deleteTransactionById(id) {
-    return { ok: true }; // 静态模式占位
-}
-
-

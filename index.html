@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>简易记账软件</title>
-        <!-- 若前端与后端跨域部署（如 GitHub Pages + Render/Railway），请设置下方 api-base 为后端根地址：
-            例： https://your-service.onrender.com 或 https://your-subdomain.railway.app -->
         <meta name="api-base" content="">
     <script src="https://cdn.tailwindcss.com/3.3.3"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
@@ -46,7 +44,6 @@
                 <div class="flex items-center space-x-2">
                     <span id="currentUserDisplay" class="text-sm text-gray-600">游客</span>
                 </div>
-                <!-- 纯静态模式：移除设置/登录入口 -->
             </div>
         </div>
     </header>
@@ -159,7 +156,6 @@
                             </label>
                         </div>
                         <p id="backupHint" class="text-xs text-gray-500 mt-2">备份为 JSON 文件；恢复会覆盖本地游客数据或尝试导入到您的账户（需登录）。</p>
-                        <!-- 分析按钮已移至页面底部固定浮动按钮 -->
                     </div>
                 </div>
             </div>
@@ -297,7 +293,7 @@
                             查看全部
                         </button>
                     </div>
-                    <div id="transactionList" class="space-y-4 max-h-80 overflow-y-auto custom-scrollbar">
+                    <div id="transactionList" class="space-y-4 min-h-[32rem] max-h-[40rem] overflow-y-auto custom-scrollbar">
                         <!-- 交易记录将通过JavaScript动态生成 -->
                         <div class="text-center py-10 text-gray-500">
                             <i class="fas fa-file-invoice-dollar text-4xl mb-3"></i>
@@ -337,9 +333,9 @@
                         <button class="range-btn px-3 py-2 border rounded" data-range="custom">自定义</button>
                     </div>
                     <div class="flex items-center gap-2">
-                        <input type="date" id="customStart" class="px-3 py-2 border rounded">
+                        <input type="date" id="customStart" class="px-3 py-2 border rounded" placeholder="yyyy/mm/dd">
                         <span class="text-gray-500">至</span>
-                        <input type="date" id="customEnd" class="px-3 py-2 border rounded">
+                        <input type="date" id="customEnd" class="px-3 py-2 border rounded" placeholder="yyyy/mm/dd">
                         <button id="applyCustomRange" class="px-3 py-2 border rounded bg-gray-100">应用</button>
                     </div>
                 </div>
@@ -361,103 +357,6 @@
             </div>
         </div>
     </div>
-
-    <!-- 交易详情模态框 -->
-    <div id="transactionModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
-        <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4 card-shadow animate-fadeIn">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold text-gray-800">交易详情</h3>
-                <button id="closeModalBtn" class="text-gray-500 hover:text-gray-700 transition-custom">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div id="modalContent" class="space-y-4">
-                <!-- 模态框内容将通过JavaScript动态生成 -->
-            </div>
-            <div class="flex justify-end space-x-3 mt-6">
-                <button id="deleteTransactionBtn" class="px-4 py-2 bg-danger text-white rounded-lg transition-custom hover:bg-danger/90">
-                    删除
-                </button>
-                <button id="editTransactionBtn" class="px-4 py-2 bg-primary text-white rounded-lg transition-custom hover:bg-primary/90">
-                    编辑
-                </button>
-            </div>
-        </div>
-    </div>
-    
-    <!-- 登录/注册模态框 -->
-    <div id="authModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
-            <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4 card-shadow animate-fadeIn">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold text-gray-800">用户 设置</h3>
-                <button id="authCloseBtn" class="text-gray-500 hover:text-gray-700 transition-custom">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="space-y-4">
-                <div class="flex space-x-2 mb-4">
-                    <button id="authTabLoginBtn" class="flex-1 py-2 rounded-lg bg-primary text-white">登录</button>
-                    <button id="authTabRegisterBtn" class="flex-1 py-2 rounded-lg bg-gray-100 text-gray-600">注册</button>
-                </div>
-
-                <div id="authError" class="text-sm text-danger hidden"></div>
-
-                <form id="loginForm" class="space-y-3">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">用户名</label>
-                        <input id="loginUsername" class="w-full px-3 py-2 border rounded" required>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">密码</label>
-                        <input id="loginPassword" type="password" class="w-full px-3 py-2 border rounded" required>
-                    </div>
-                    <div class="flex justify-end">
-                        <button type="button" id="loginBtn" class="px-4 py-2 bg-primary text-white rounded-lg">登录</button>
-                    </div>
-                </form>
-
-                <form id="registerForm" class="space-y-3 hidden">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">用户名</label>
-                        <input id="registerUsername" class="w-full px-3 py-2 border rounded" required>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">密码</label>
-                        <input id="registerPassword" type="password" class="w-full px-3 py-2 border rounded" required>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">确认密码</label>
-                        <input id="registerConfirm" type="password" class="w-full px-3 py-2 border rounded" required>
-                    </div>
-                    <div class="flex justify-end">
-                        <button type="button" id="registerBtn" class="px-4 py-2 bg-secondary text-white rounded-lg">注册</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <!-- AI 分析模态框 -->
-    <div id="aiModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
-            <div class="hidden">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold text-gray-800">支出分析（AI）</h3>
-                <button id="aiCloseBtn" class="text-gray-500 hover:text-gray-700 transition-custom">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div id="aiContent" class="prose max-h-72 overflow-y-auto text-sm text-gray-700">
-                <!-- 分析结果将插入此处 -->
-                <p class="text-gray-500">暂无分析结果。请点击“分析支出”以开始。</p>
-            </div>
-            <div class="flex justify-end mt-4">
-                <button id="aiCloseFooterBtn" class="px-4 py-2 bg-gray-100 rounded-lg">关闭</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- 浮动分析按钮移除（纯静态模式） -->
-
     <!-- 外部JavaScript文件 -->
     <script src="app.js"></script>
 </body>
