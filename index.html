@@ -309,6 +309,59 @@
         </div>
     </main>
     
+    <!-- 全部交易列表模态框 -->
+    <div id="allTransactionsModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl p-6 max-w-3xl w-full mx-4 card-shadow animate-fadeIn">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-gray-800">全部交易记录</h3>
+                <button id="closeAllTransactionsBtn" class="text-gray-500 hover:text-gray-700 transition-custom">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="space-y-3 mb-4">
+                <div class="flex items-center gap-3">
+                    <input id="allSearchInput" class="flex-1 px-3 py-2 border rounded" placeholder="按备注或分类搜索...">
+                    <select id="allTypeFilter" class="px-3 py-2 border rounded">
+                        <option value="all">全部</option>
+                        <option value="income">仅收入</option>
+                        <option value="expense">仅支出</option>
+                    </select>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-2">
+                        <button class="range-btn px-3 py-2 border rounded" data-range="day">日</button>
+                        <button class="range-btn px-3 py-2 border rounded" data-range="week">周</button>
+                        <button class="range-btn px-3 py-2 border rounded" data-range="month">月</button>
+                        <button class="range-btn px-3 py-2 border rounded" data-range="quarter">季</button>
+                        <button class="range-btn px-3 py-2 border rounded" data-range="year">年</button>
+                        <button class="range-btn px-3 py-2 border rounded" data-range="custom">自定义</button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="date" id="customStart" class="px-3 py-2 border rounded">
+                        <span class="text-gray-500">至</span>
+                        <input type="date" id="customEnd" class="px-3 py-2 border rounded">
+                        <button id="applyCustomRange" class="px-3 py-2 border rounded bg-gray-100">应用</button>
+                    </div>
+                </div>
+            </div>
+            <div id="allTransactionsList" class="max-h-[52vh] overflow-y-auto custom-scrollbar space-y-2"></div>
+            <div class="flex items-center justify-between mt-4">
+                <div class="text-sm text-gray-600">
+                    <span id="paginationInfo">第 1/1 页</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="prevPageBtn" class="px-3 py-2 border rounded">上一页</button>
+                    <button id="nextPageBtn" class="px-3 py-2 border rounded">下一页</button>
+                    <select id="pageSizeSelect" class="px-3 py-2 border rounded">
+                        <option value="10">每页 10 条</option>
+                        <option value="20">每页 20 条</option>
+                        <option value="50">每页 50 条</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 交易详情模态框 -->
     <div id="transactionModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
         <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4 card-shadow animate-fadeIn">

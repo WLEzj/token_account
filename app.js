@@ -75,6 +75,25 @@ const deleteTransactionBtn = document.getElementById('deleteTransactionBtn'); //
 const editTransactionBtn = document.getElementById('editTransactionBtn'); // 编辑交易按钮
 const modalContent = document.getElementById('modalContent'); // 模态框内容
 const viewAllBtn = document.getElementById('viewAllBtn'); // 查看全部按钮
+// 全部交易模态元素
+const allTransactionsModal = document.getElementById('allTransactionsModal');
+const closeAllTransactionsBtn = document.getElementById('closeAllTransactionsBtn');
+const allTransactionsList = document.getElementById('allTransactionsList');
+const allSearchInput = document.getElementById('allSearchInput');
+const allTypeFilter = document.getElementById('allTypeFilter');
+const rangeButtons = document.querySelectorAll('.range-btn');
+const customStart = document.getElementById('customStart');
+const customEnd = document.getElementById('customEnd');
+const applyCustomRange = document.getElementById('applyCustomRange');
+const prevPageBtn = document.getElementById('prevPageBtn');
+const nextPageBtn = document.getElementById('nextPageBtn');
+const pageSizeSelect = document.getElementById('pageSizeSelect');
+const paginationInfo = document.getElementById('paginationInfo');
+
+// 查看全部状态
+let allRange = 'month'; // 默认显示本月
+let allPage = 1;
+let allPageSize = 10;
 const timeFilterBtns = document.querySelectorAll('.time-filter-btn'); // 时间筛选按钮
 
 // 用户认证相关元素
@@ -236,6 +255,21 @@ function init() {
     if (deleteTransactionBtn) deleteTransactionBtn.addEventListener('click', deleteCurrentTransaction);
     if (editTransactionBtn) editTransactionBtn.addEventListener('click', editCurrentTransaction);
     if (viewAllBtn) viewAllBtn.addEventListener('click', viewAllTransactions);
+    if (closeAllTransactionsBtn) closeAllTransactionsBtn.addEventListener('click', () => allTransactionsModal.classList.add('hidden'));
+    if (allTransactionsModal) allTransactionsModal.addEventListener('click', (e) => { if (e.target === allTransactionsModal) allTransactionsModal.classList.add('hidden'); });
+    if (allSearchInput) allSearchInput.addEventListener('input', renderAllTransactions);
+    if (allTypeFilter) allTypeFilter.addEventListener('change', renderAllTransactions);
+    rangeButtons.forEach(btn => btn.addEventListener('click', () => {
+        rangeButtons.forEach(b => b.classList.remove('bg-primary','text-white'));
+        btn.classList.add('bg-primary','text-white');
+        allRange = btn.dataset.range;
+        allPage = 1;
+        renderAllTransactions();
+    }));
+    if (applyCustomRange) applyCustomRange.addEventListener('click', () => { allRange = 'custom'; allPage = 1; renderAllTransactions(); });
+    if (prevPageBtn) prevPageBtn.addEventListener('click', () => { if (allPage > 1) { allPage--; renderAllTransactions(); } });
+    if (nextPageBtn) nextPageBtn.addEventListener('click', () => { allPage++; renderAllTransactions(true); });
+    if (pageSizeSelect) pageSizeSelect.addEventListener('change', () => { allPageSize = Number(pageSizeSelect.value) || 10; allPage = 1; renderAllTransactions(); });
 
     // 时间筛选按钮
     timeFilterBtns.forEach(btn => {
@@ -1488,7 +1522,176 @@ function editCurrentTransaction() {
 
 // 查看所有交易
 function viewAllTransactions() {
-    alert('查看全部功能开发中...');
+    renderAllTransactions();
+    allTransactionsModal.classList.remove('hidden');
+}
+
+function renderAllTransactions() {
+    const q = (allSearchInput && allSearchInput.value || '').trim().toLowerCase();
+    const typeFilter = (allTypeFilter && allTypeFilter.value) || 'all';
+    let list = getTransactions()
+        .map(t => ({
+            id: t.id,
+            type: t.type,
+            amountCents: getAmountCents(t),
+            amount: centsToNumber(getAmountCents(t)),
+            date: t.date,
+            category: t.category || { name: '未分类', icon: 'question-circle', color: '#999' },
+            note: t.note || '',
+            createdAt: t.createdAt || t.created_at
+        }))
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // 日期范围过滤
+    const { start, end } = computeRange(allRange);
+    list = list.filter(t => {
+        const d = new Date(t.date);
+        return (!start || d >= start) && (!end || d <= end);
+    });
+
+    const filtered = list.filter(t => {
+        const matchType = typeFilter === 'all' ? true : (t.type === typeFilter);
+        const hay = `${t.note} ${t.category.name}`.toLowerCase();
+        const matchQ = q ? hay.includes(q) : true;
+        return matchType && matchQ;
+    });
+
+    allTransactionsList.innerHTML = '';
+    if (filtered.length === 0) {
+        allTransactionsList.innerHTML = `
+            <div class="text-center py-6 text-gray-500">
+                暂无匹配的交易记录
+            </div>
+        `;
+        return;
+    }
+
+    // 分页
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / allPageSize));
+    if (allPage > totalPages) allPage = totalPages;
+    const startIdx = (allPage - 1) * allPageSize;
+    const pageItems = filtered.slice(startIdx, startIdx + allPageSize);
+    if (paginationInfo) paginationInfo.textContent = `第 ${totalPages === 0 ? 0 : allPage}/${totalPages} 页，共 ${total} 条`;
+    if (prevPageBtn) prevPageBtn.disabled = allPage <= 1;
+    if (nextPageBtn) nextPageBtn.disabled = allPage >= totalPages;
+
+    pageItems.forEach(t => {
+        const isExpense = t.type === 'expense';
+        const bg = t.category.color ? t.category.color + '20' : '#ddd';
+        const item = document.createElement('div');
+        item.className = 'flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:border-gray-200';
+        item.innerHTML = `
+            <div class="flex items-center">
+                <div class="w-10 h-10 rounded-full flex items-center justify-center mr-3" style="background-color: ${bg}">
+                    <i class="fas fa-${t.category.icon}" style="color: ${t.category.color}"></i>
+                </div>
+                <div>
+                    <p class="font-medium">${t.category.name}</p>
+                    <p class="text-xs text-gray-500">${formatDate(t.date)}</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <span class="font-bold ${isExpense ? 'text-danger' : 'text-secondary'}">${isExpense ? '-' : '+'}¥${t.amount.toFixed(2)}</span>
+                <button class="px-2 py-1 text-sm border rounded hover:bg-gray-50" data-action="edit" data-id="${t.id}">编辑</button>
+                <button class="px-2 py-1 text-sm border rounded hover:bg-gray-50" data-action="delete" data-id="${t.id}">删除</button>
+            </div>
+        `;
+        // 打开详情
+        item.querySelector('.font-medium').addEventListener('click', () => openTransactionModal(t.id));
+        // 编辑
+        item.querySelector('[data-action="edit"]').addEventListener('click', () => {
+            // 复用单条编辑逻辑
+            editTransactionById(t.id);
+        });
+        // 删除
+        item.querySelector('[data-action="delete"]').addEventListener('click', async () => {
+            await deleteTransactionDirect(t.id);
+        });
+        allTransactionsList.appendChild(item);
+    });
+}
+
+function computeRange(range) {
+    const now = new Date();
+    // 归一到本地日期 00:00
+    const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const endOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+
+    if (range === 'day') {
+        const s = startOfDay(now); const e = endOfDay(now);
+        return { start: s, end: e };
+    }
+    if (range === 'week') {
+        const d = new Date(now);
+        const day = d.getDay(); // 0-6, 周日为0
+        const diffToMonday = (day + 6) % 7; // 将周一视为一周起点
+        const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - diffToMonday);
+        const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
+        return { start: startOfDay(monday), end: endOfDay(sunday) };
+    }
+    if (range === 'month') {
+        const s = new Date(now.getFullYear(), now.getMonth(), 1);
+        const e = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        return { start: s, end: e };
+    }
+    if (range === 'quarter') {
+        const q = Math.floor(now.getMonth() / 3); // 0..3
+        const startMonth = q * 3;
+        const s = new Date(now.getFullYear(), startMonth, 1);
+        const e = new Date(now.getFullYear(), startMonth + 3, 0, 23, 59, 59, 999);
+        return { start: s, end: e };
+    }
+    if (range === 'year') {
+        const s = new Date(now.getFullYear(), 0, 1);
+        const e = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+        return { start: s, end: e };
+    }
+    if (range === 'custom') {
+        let s = customStart && customStart.value ? new Date(customStart.value) : null;
+        let e = customEnd && customEnd.value ? new Date(customEnd.value) : null;
+        if (s) s = startOfDay(s);
+        if (e) e = endOfDay(e);
+        return { start: s, end: e };
+    }
+    return { start: null, end: null };
+}
+
+function editTransactionById(id) {
+    const transaction = getTransactions().find(t => t.id === id);
+    if (!transaction) return;
+    editingTransactionId = id;
+    setTransactionType(transaction.type);
+    amountInput.value = centsToNumber(getAmountCents(transaction));
+    document.getElementById('dateInput').value = transaction.date;
+    document.getElementById('noteInput').value = transaction.note || '';
+    selectedCategory = transaction.category ? transaction.category.id : null;
+    renderCategories();
+    updateSaveButtonState();
+    allTransactionsModal.classList.add('hidden');
+    document.querySelector('.lg\:col-span-1').scrollIntoView({ behavior: 'smooth' });
+    showToast('已载入至表单，请修改后保存');
+}
+
+async function deleteTransactionDirect(id) {
+    try {
+        if (currentUser) {
+            await deleteTransactionById(id);
+        } else {
+            const key = 'transactions_guest';
+            const raw = localStorage.getItem(key);
+            const arr = raw ? JSON.parse(raw) : [];
+            const updated = arr.filter(t => t.id !== id);
+            localStorage.setItem(key, JSON.stringify(updated));
+        }
+        await loadTransactions();
+        renderAllTransactions();
+        updateCharts();
+        showToast('交易已删除');
+    } catch (e) {
+        console.error(e);
+        showToast('删除失败');
+    }
 }
 
 // 格式化日期
