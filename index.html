@@ -31,28 +31,28 @@
     <!-- 外部样式表 -->
     <link rel="stylesheet" href="styles.css">
 </head>
-<body class="min-h-screen">
-    <!-- 顶部导航栏 -->
+<body class="min-h-screen" data-page="home">
     <header class="sticky top-0 z-50 glass-effect border-b border-gray-200">
-        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+        <div class="container mx-auto px-4 py-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div class="flex items-center space-x-2">
                 <i class="fas fa-wallet text-primary text-2xl"></i>
                 <h1 class="text-xl font-bold text-gray-800">简易记账</h1>
             </div>
-            <div class="flex items-center space-x-4">
-                <!-- themeToggle removed -->
-                <div class="flex items-center space-x-2">
-                    <span id="currentUserDisplay" class="text-sm text-gray-600">游客</span>
-                </div>
+            <nav class="app-nav flex flex-wrap gap-2">
+                <a href="index.html" class="nav-link is-active">总览</a>
+                <a href="transactions.html" class="nav-link">记账/交易</a>
+                <a href="analytics.html" class="nav-link">统计分析</a>
+                <a href="settings.html" class="nav-link">预算/导出/备份</a>
+            </nav>
+            <div class="flex items-center space-x-2">
+                <span id="currentUserDisplay" class="text-sm text-gray-600">游客</span>
             </div>
         </div>
     </header>
 
     <main class="container mx-auto px-4 py-6">
-        <!-- 统计卡片区域 -->
         <section class="mb-8 animate-fadeIn" style="animation-delay: 0.1s;">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <!-- 总资产卡片 -->
                 <div class="bg-white rounded-xl p-6 card-shadow transition-custom hover:shadow-lg">
                     <div class="flex justify-between items-start mb-4">
                         <div>
@@ -68,8 +68,6 @@
                         <span id="monthChange" class="ml-2 text-secondary">+¥0.00</span>
                     </div>
                 </div>
-                
-                <!-- 收入卡片 -->
                 <div class="bg-white rounded-xl p-6 card-shadow transition-custom hover:shadow-lg">
                     <div class="flex justify-between items-start mb-4">
                         <div>
@@ -85,8 +83,6 @@
                         <span id="incomeChange" class="ml-2 text-secondary">+0.00%</span>
                     </div>
                 </div>
-                
-                <!-- 支出卡片 -->
                 <div class="bg-white rounded-xl p-6 card-shadow transition-custom hover:shadow-lg">
                     <div class="flex justify-between items-start mb-4">
                         <div>
@@ -104,66 +100,8 @@
                 </div>
             </div>
         </section>
-        
-        <!-- 预算设置 -->
-        <section class="mb-8 animate-fadeIn" style="animation-delay: 0.15s;">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="bg-white rounded-xl p-6 card-shadow h-full">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="text-lg font-semibold text-gray-800">月度预算</h3>
-                        <span id="budgetStatus" class="text-sm text-gray-500">当前预算：¥0.00</span>
-                    </div>
-                    <p id="budgetSummary" class="text-sm text-gray-600 mb-4">本月已支出 ¥0.00，剩余 ¥0.00。</p>
-                    <div class="flex flex-col sm:flex-row sm:items-center gap-3">
-                        <div class="relative flex-1">
-                            <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">¥</span>
-                            <input type="number" id="budgetInput" class="w-full pl-8 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none input-focus" placeholder="设置月度预算" min="0" step="0.01">
-                        </div>
-                        <button id="saveBudgetBtn" class="px-5 py-3 bg-secondary text-white font-medium rounded-lg transition-custom hover:bg-secondary/90">保存预算</button>
-                    </div>
-                    <p id="budgetWarning" class="hidden mt-4 text-sm font-medium text-danger"></p>
-                </div>
 
-                <div class="bg-white rounded-xl p-6 card-shadow h-full flex flex-col justify-between">
-                    <div>
-                        <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-lg font-semibold text-gray-800">数据导出</h3>
-                            <span class="text-sm text-gray-500">下载您的收支记录</span>
-                        </div>
-                        <p class="text-sm text-gray-600">支持将本月及历史交易记录导出为 CSV 或 Excel 文件，方便备份与统计分析。</p>
-                    </div>
-                    <div class="mt-6 flex flex-col sm:flex-row sm:items-center gap-3">
-                        <button id="exportCsvBtn" class="flex-1 px-4 py-3 border border-primary text-primary rounded-lg transition-custom hover:bg-primary hover:text-white">
-                            <i class="fas fa-file-csv mr-2"></i>导出 CSV
-                        </button>
-                        <button id="exportExcelBtn" class="flex-1 px-4 py-3 border border-primary text-primary rounded-lg transition-custom hover:bg-primary hover:text-white">
-                            <i class="fas fa-file-excel mr-2"></i>导出 Excel
-                        </button>
-                    </div>
-                    <!-- 数据备份：手动备份与恢复 -->
-                    <div class="mt-4 border-t pt-4">
-                        <div class="flex items-center justify-between mb-2">
-                            <h4 class="text-sm font-medium text-gray-800">数据备份</h4>
-                            <span id="backupStatus" class="text-xs text-gray-500">未备份</span>
-                        </div>
-                        <div class="flex flex-col sm:flex-row sm:items-center gap-3">
-                            <button id="backupBtn" class="px-4 py-2 bg-primary text-white rounded-lg transition-custom hover:bg-primary/90 flex-1">
-                                <i class="fas fa-database mr-2"></i>手动备份
-                            </button>
-                            <label class="flex-1">
-                                <input type="file" id="restoreFileInput" accept="application/json" class="hidden">
-                                <button id="restoreBtn" type="button" class="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white hover:bg-gray-50">从本地恢复</button>
-                            </label>
-                        </div>
-                        <p id="backupHint" class="text-xs text-gray-500 mt-2">备份为 JSON 文件；恢复会覆盖本地游客数据或尝试导入到您的账户（需登录）。</p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- 图表区域 -->
         <section class="mb-8 animate-fadeIn" style="animation-delay: 0.2s;">
-            <!-- 收支趋势图 -->
             <div class="bg-white rounded-xl p-6 card-shadow mb-6">
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
                     <h3 class="text-lg font-semibold text-gray-800">收支趋势</h3>
@@ -173,191 +111,13 @@
                         <button class="time-filter-btn px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-600 hover:bg-gray-200 transition-custom" data-period="year">年度</button>
                     </div>
                 </div>
-                <div class="h-64">
+                <div class="h-72">
                     <canvas id="trendChart"></canvas>
                 </div>
             </div>
-            
-            <!-- 图表网格：收支对比和分类统计 -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <!-- 月度收支对比柱状图 -->
-                <div class="bg-white rounded-xl p-6 card-shadow">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-6">月度收支对比</h3>
-                    <div class="h-64">
-                        <canvas id="monthlyComparisonChart"></canvas>
-                    </div>
-                </div>
-                
-                <!-- 收支比例饼图 -->
-                <div class="bg-white rounded-xl p-6 card-shadow">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-6">收支比例</h3>
-                    <div class="h-64">
-                        <canvas id="incomeExpenseRatioChart"></canvas>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- 分类统计图表 -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <!-- 收入分类饼图 -->
-                <div class="bg-white rounded-xl p-6 card-shadow">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-6">收入分类</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="h-64">
-                            <canvas id="incomeCategoryChart"></canvas>
-                        </div>
-                        <div class="space-y-3">
-                            <div id="incomeCategoryList" class="max-h-64 overflow-y-auto custom-scrollbar">
-                                <!-- 收入分类列表将通过JavaScript动态生成 -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- 支出分类饼图 -->
-                <div class="bg-white rounded-xl p-6 card-shadow">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-6">支出分类</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="h-64">
-                            <canvas id="categoryChart"></canvas>
-                        </div>
-                        <div class="space-y-3">
-                            <div id="categoryList" class="max-h-64 overflow-y-auto custom-scrollbar">
-                                <!-- 分类列表将通过JavaScript动态生成 -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </section>
-        
-        <!-- 主要内容区域：记账表单和分类统计 -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-            <!-- 左侧：记账表单 -->
-            <div class="lg:col-span-1 animate-fadeIn" style="animation-delay: 0.3s;">
-                <div class="bg-white rounded-xl p-6 card-shadow h-full">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-4">添加记账</h3>
-                    
-                    <!-- 类型选择 -->
-                    <div class="flex space-x-2 mb-6">
-                        <button id="expenseBtn" class="flex-1 py-3 rounded-lg bg-danger text-white font-medium transition-custom">
-                            <i class="fas fa-minus-circle mr-2"></i>支出
-                        </button>
-                        <button id="incomeBtn" class="flex-1 py-3 rounded-lg bg-gray-100 text-gray-600 font-medium transition-custom">
-                            <i class="fas fa-plus-circle mr-2"></i>收入
-                        </button>
-                    </div>
-                    
-                    <!-- 金额输入 -->
-                    <div class="mb-6">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">金额</label>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">¥</span>
-                            <input type="number" id="amountInput" class="w-full pl-8 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none input-focus" placeholder="0.00" step="0.01" min="0">
-                        </div>
-                    </div>
-                    
-                    <!-- 日期选择 -->
-                    <div class="mb-6">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">日期</label>
-                        <input type="date" id="dateInput" class="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none input-focus">
-                    </div>
-                    
-                    <!-- 分类选择 -->
-                    <div class="mb-6">
-                        <label class="block text-sm font-medium text-gray-700 mb-3">分类</label>
-                        <div id="categoryContainer" class="grid grid-cols-4 gap-2">
-                            <!-- 分类项将通过JavaScript动态生成 -->
-                        </div>
-                    </div>
-                    
-                    <!-- 备注输入 -->
-                    <div class="mb-6">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">备注</label>
-                        <textarea id="noteInput" rows="2" class="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none input-focus" placeholder="添加备注..."></textarea>
-                    </div>
-                    
-                    <!-- 保存按钮 -->
-                    <button id="saveBtn" class="w-full py-3 bg-primary text-white font-medium rounded-lg transition-custom hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                        保存记录
-                    </button>
-                </div>
-            </div>
-            
-            <!-- 右侧：最近交易 -->
-            <div class="lg:col-span-2 animate-fadeIn" style="animation-delay: 0.4s;">
-                <div class="bg-white rounded-xl p-6 card-shadow h-full">
-                    <div class="flex justify-between items-center mb-6">
-                        <h3 class="text-lg font-semibold text-gray-800">最近交易</h3>
-                        <button id="viewAllBtn" class="text-primary text-sm hover:underline transition-custom">
-                            查看全部
-                        </button>
-                    </div>
-                    <div id="transactionList" class="space-y-4 min-h-[32rem] max-h-[40rem] overflow-y-auto custom-scrollbar">
-                        <!-- 交易记录将通过JavaScript动态生成 -->
-                        <div class="text-center py-10 text-gray-500">
-                            <i class="fas fa-file-invoice-dollar text-4xl mb-3"></i>
-                            <p>暂无交易记录</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
     </main>
-    
-    <!-- 全部交易列表模态框 -->
-    <div id="allTransactionsModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
-        <div class="bg-white rounded-xl p-6 max-w-3xl w-full mx-4 card-shadow animate-fadeIn">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold text-gray-800">全部交易记录</h3>
-                <button id="closeAllTransactionsBtn" class="text-gray-500 hover:text-gray-700 transition-custom">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="space-y-3 mb-4">
-                <div class="flex items-center gap-3">
-                    <input id="allSearchInput" class="flex-1 px-3 py-2 border rounded" placeholder="按备注或分类搜索...">
-                    <select id="allTypeFilter" class="px-3 py-2 border rounded">
-                        <option value="all">全部</option>
-                        <option value="income">仅收入</option>
-                        <option value="expense">仅支出</option>
-                    </select>
-                </div>
-                <div class="flex items-center gap-3">
-                    <div class="flex items-center gap-2">
-                        <button class="range-btn px-3 py-2 border rounded" data-range="day">日</button>
-                        <button class="range-btn px-3 py-2 border rounded" data-range="week">周</button>
-                        <button class="range-btn px-3 py-2 border rounded" data-range="month">月</button>
-                        <button class="range-btn px-3 py-2 border rounded" data-range="quarter">季</button>
-                        <button class="range-btn px-3 py-2 border rounded" data-range="year">年</button>
-                        <button class="range-btn px-3 py-2 border rounded" data-range="custom">自定义</button>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <input type="date" id="customStart" class="px-3 py-2 border rounded" placeholder="yyyy/mm/dd">
-                        <span class="text-gray-500">至</span>
-                        <input type="date" id="customEnd" class="px-3 py-2 border rounded" placeholder="yyyy/mm/dd">
-                        <button id="applyCustomRange" class="px-3 py-2 border rounded bg-gray-100">应用</button>
-                    </div>
-                </div>
-            </div>
-            <div id="allTransactionsList" class="max-h-[52vh] overflow-y-auto custom-scrollbar space-y-2"></div>
-            <div class="flex items-center justify-between mt-4">
-                <div class="text-sm text-gray-600">
-                    <span id="paginationInfo">第 1/1 页</span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <button id="prevPageBtn" class="px-3 py-2 border rounded">上一页</button>
-                    <button id="nextPageBtn" class="px-3 py-2 border rounded">下一页</button>
-                    <select id="pageSizeSelect" class="px-3 py-2 border rounded">
-                        <option value="10">每页 10 条</option>
-                        <option value="20">每页 20 条</option>
-                        <option value="50">每页 50 条</option>
-                    </select>
-                </div>
-            </div>
-        </div>
-    </div>
-    <!-- 外部JavaScript文件 -->
+
     <script src="app.js"></script>
 </body>
 </html>

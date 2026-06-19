@@ -1,5 +1,14 @@
+const appPage = document.body?.dataset?.page || 'home';
+
 // 初始化日期输入为今天
-document.getElementById('dateInput').valueAsDate = new Date();
+const dateInputOnLoad = document.getElementById('dateInput');
+if (dateInputOnLoad) {
+    dateInputOnLoad.valueAsDate = new Date();
+}
+
+function isCurrentPage(...pages) {
+    return pages.includes(appPage);
+}
 
 // 交易类型和分类数据定义
 // 支出分类
@@ -38,10 +47,14 @@ let budgetExceeded = false; // 预算是否超支
 
 // 图表实例占位（初始化后赋值）
 let trendChart = null;
+let analyticsTrendChart = null;
 let categoryChart = null;
 let incomeCategoryChart = null;
 let monthlyComparisonChart = null;
 let incomeExpenseRatioChart = null;
+
+let homeTrendPeriod = 'month';
+let analyticsTrendPeriod = 'month';
 
 // 金额辅助函数（此前缺失导致渲染报错）
 function parseAmountToCents(value) {
@@ -56,6 +69,20 @@ function getAmountCents(t) {
     if (!t) return 0;
     if (typeof t.amountCents === 'number') return t.amountCents;
     if (t.amount != null) return parseAmountToCents(t.amount);
+    return 0;
+}
+
+function getTransactionSortKey(t) {
+    if (!t) return 0;
+    const createdAt = t.createdAt || t.created_at;
+    if (createdAt) {
+        const createdAtMs = Date.parse(createdAt);
+        if (!Number.isNaN(createdAtMs)) return createdAtMs;
+    }
+    const idAsNumber = Number.parseFloat(t.id);
+    if (!Number.isNaN(idAsNumber)) return idAsNumber;
+    const dateMs = Date.parse(t.date);
+    if (!Number.isNaN(dateMs)) return dateMs;
     return 0;
 }
 
@@ -90,6 +117,8 @@ const nextPageBtn = document.getElementById('nextPageBtn');
 const pageSizeSelect = document.getElementById('pageSizeSelect');
 const paginationInfo = document.getElementById('paginationInfo');
 
+const analyticsTimeFilterBtns = document.querySelectorAll('.analytics-time-filter-btn');
+
 // 查看全部状态
 let allRange = 'month'; // 默认显示本月
 let allPage = 1;
@@ -113,69 +142,91 @@ const backupStatus = document.getElementById('backupStatus'); // 备份状态
 
 // ----------------- 应用初始化（恢复事件绑定与图表/分类渲染） -----------------
 function init() {
-    // 默认类型与分类渲染
-    setTransactionType('expense');
-    renderCategories();
-    updateSaveButtonState();
+    if (isCurrentPage('home', 'transactions')) {
+        if (expenseBtn && incomeBtn) {
+            setTransactionType('expense');
+            renderCategories();
+            updateSaveButtonState();
+        }
 
-    // 事件绑定：类型切换
-    if (expenseBtn) expenseBtn.addEventListener('click', () => setTransactionType('expense'));
-    if (incomeBtn) incomeBtn.addEventListener('click', () => setTransactionType('income'));
+        if (expenseBtn) expenseBtn.addEventListener('click', () => setTransactionType('expense'));
+        if (incomeBtn) incomeBtn.addEventListener('click', () => setTransactionType('income'));
+        if (amountInput) amountInput.addEventListener('input', updateSaveButtonState);
+        if (saveBtn) saveBtn.addEventListener('click', () => { if (!saveBtn.disabled) saveTransaction(); });
 
-    // 输入与保存
-    if (amountInput) amountInput.addEventListener('input', updateSaveButtonState);
-    if (saveBtn) saveBtn.addEventListener('click', () => { if (!saveBtn.disabled) saveTransaction(); });
-
-    // 交易模态相关
-    if (closeModalBtn) closeModalBtn.addEventListener('click', closeModal);
-    if (deleteTransactionBtn) deleteTransactionBtn.addEventListener('click', deleteCurrentTransaction);
-    if (editTransactionBtn) editTransactionBtn.addEventListener('click', editCurrentTransaction);
-    if (viewAllBtn) viewAllBtn.addEventListener('click', viewAllTransactions);
-    if (closeAllTransactionsBtn) closeAllTransactionsBtn.addEventListener('click', () => allTransactionsModal.classList.add('hidden'));
-    if (allTransactionsModal) allTransactionsModal.addEventListener('click', (e) => { if (e.target === allTransactionsModal) allTransactionsModal.classList.add('hidden'); });
-    if (allSearchInput) allSearchInput.addEventListener('input', renderAllTransactions);
-    if (allTypeFilter) allTypeFilter.addEventListener('change', renderAllTransactions);
-    rangeButtons.forEach(btn => btn.addEventListener('click', () => {
-        rangeButtons.forEach(b => b.classList.remove('bg-primary','text-white'));
-        btn.classList.add('bg-primary','text-white');
-        allRange = btn.dataset.range;
-        allPage = 1;
-        renderAllTransactions();
-    }));
-    if (applyCustomRange) applyCustomRange.addEventListener('click', () => { allRange = 'custom'; allPage = 1; renderAllTransactions(); });
-    if (prevPageBtn) prevPageBtn.addEventListener('click', () => { if (allPage > 1) { allPage--; renderAllTransactions(); } });
-    if (nextPageBtn) nextPageBtn.addEventListener('click', () => { allPage++; renderAllTransactions(true); });
-    if (pageSizeSelect) pageSizeSelect.addEventListener('change', () => { allPageSize = Number(pageSizeSelect.value) || 10; allPage = 1; renderAllTransactions(); });
-
-    // 时间筛选按钮
-    timeFilterBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            timeFilterBtns.forEach(b => {
-                b.classList.remove('bg-primary', 'text-white');
-                b.classList.add('bg-gray-100', 'text-gray-600');
-            });
-            btn.classList.remove('bg-gray-100', 'text-gray-600');
+        if (closeModalBtn) closeModalBtn.addEventListener('click', closeModal);
+        if (deleteTransactionBtn) deleteTransactionBtn.addEventListener('click', deleteCurrentTransaction);
+        if (editTransactionBtn) editTransactionBtn.addEventListener('click', editCurrentTransaction);
+        if (viewAllBtn) viewAllBtn.addEventListener('click', viewAllTransactions);
+        if (closeAllTransactionsBtn && allTransactionsModal) closeAllTransactionsBtn.addEventListener('click', () => allTransactionsModal.classList.add('hidden'));
+        if (allTransactionsModal) allTransactionsModal.addEventListener('click', (e) => { if (e.target === allTransactionsModal) allTransactionsModal.classList.add('hidden'); });
+        if (allSearchInput) allSearchInput.addEventListener('input', renderAllTransactions);
+        if (allTypeFilter) allTypeFilter.addEventListener('change', renderAllTransactions);
+        rangeButtons.forEach(btn => btn.addEventListener('click', () => {
+            rangeButtons.forEach(b => b.classList.remove('bg-primary', 'text-white'));
             btn.classList.add('bg-primary', 'text-white');
-            updateTrendChart(btn.dataset.period);
+            allRange = btn.dataset.range;
+            allPage = 1;
+            renderAllTransactions();
+        }));
+        if (applyCustomRange) applyCustomRange.addEventListener('click', () => { allRange = 'custom'; allPage = 1; renderAllTransactions(); });
+        if (prevPageBtn) prevPageBtn.addEventListener('click', () => { if (allPage > 1) { allPage--; renderAllTransactions(); } });
+        if (nextPageBtn) nextPageBtn.addEventListener('click', () => { allPage++; renderAllTransactions(); });
+        if (pageSizeSelect) pageSizeSelect.addEventListener('change', () => { allPageSize = Number(pageSizeSelect.value) || 10; allPage = 1; renderAllTransactions(); });
+
+        if (isCurrentPage('home')) {
+            timeFilterBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    homeTrendPeriod = btn.dataset.period;
+                    timeFilterBtns.forEach(b => {
+                        b.classList.remove('bg-primary', 'text-white');
+                        b.classList.add('bg-gray-100', 'text-gray-600');
+                    });
+                    btn.classList.remove('bg-gray-100', 'text-gray-600');
+                    btn.classList.add('bg-primary', 'text-white');
+                    updateTrendChart(homeTrendPeriod);
+                });
+            });
+        }
+    }
+
+    if (isCurrentPage('analytics')) {
+        analyticsTimeFilterBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                analyticsTrendPeriod = btn.dataset.period;
+                analyticsTimeFilterBtns.forEach(b => {
+                    b.classList.remove('bg-primary', 'text-white');
+                    b.classList.add('bg-gray-100', 'text-gray-600');
+                });
+                btn.classList.remove('bg-gray-100', 'text-gray-600');
+                btn.classList.add('bg-primary', 'text-white');
+                updateCharts();
+            });
         });
-    });
+    }
 
-    // 预算保存与回车快捷
-    if (saveBudgetBtn) saveBudgetBtn.addEventListener('click', handleBudgetSave);
-    if (budgetInput) budgetInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); handleBudgetSave(); } });
+    if (isCurrentPage('settings')) {
+        if (saveBudgetBtn) saveBudgetBtn.addEventListener('click', handleBudgetSave);
+        if (budgetInput) budgetInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); handleBudgetSave(); } });
+        if (exportCsvBtn) exportCsvBtn.addEventListener('click', () => handleExport('csv'));
+        if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => handleExport('excel'));
+        if (backupBtn) backupBtn.addEventListener('click', handleBackup);
+        if (restoreBtn) restoreBtn.addEventListener('click', () => restoreFileInput && restoreFileInput.click());
+        if (restoreFileInput) restoreFileInput.addEventListener('change', handleRestoreFile);
+    }
 
-    // 导出 / 备份 / 恢复
-    if (exportCsvBtn) exportCsvBtn.addEventListener('click', () => handleExport('csv'));
-    if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => handleExport('excel'));
-    if (backupBtn) backupBtn.addEventListener('click', handleBackup);
-    if (restoreBtn) restoreBtn.addEventListener('click', () => restoreFileInput && restoreFileInput.click());
-    if (restoreFileInput) restoreFileInput.addEventListener('change', handleRestoreFile);
+    if (isCurrentPage('home', 'analytics')) {
+        initCharts();
+        updateCharts();
+    }
 
-    // 初始化图表与数据
-    initCharts();
-    loadTransactions();
-    loadBudget();
-    updateCharts();
+    if (isCurrentPage('home', 'transactions')) {
+        loadTransactions();
+    }
+
+    if (isCurrentPage('settings')) {
+        loadBudget();
+    }
 }
 
 // ----------------- 备份与恢复功能 -----------------
@@ -334,7 +385,8 @@ async function saveTransaction() {
 
     // 重置表单
     amountInput.value = '';
-    document.getElementById('noteInput').value = '';
+    const noteInput = document.getElementById('noteInput');
+    if (noteInput) noteInput.value = '';
     selectedCategory = null;
     renderCategories();
     updateSaveButtonState();
@@ -374,6 +426,10 @@ function getTransactions() {
 
 // 加载交易记录
 async function loadTransactions() {
+    if (!transactionList) {
+        updateFinancialSummary();
+        return;
+    }
     transactionList.innerHTML = '';
     if (!currentUser) {
         // 游客模式：从 localStorage 读取并渲染
@@ -406,7 +462,7 @@ async function loadTransactions() {
             note: r.note,
             createdAt: r.createdAt || r.created_at
         }));
-        normalized.sort((a,b) => new Date(b.date) - new Date(a.date));
+        normalized.sort((a, b) => getTransactionSortKey(b) - getTransactionSortKey(a));
         const recentTransactions = normalized.slice(0,10);
         recentTransactions.forEach(transaction => {
             const transactionItem = document.createElement('div');
@@ -484,20 +540,26 @@ function updateFinancialSummary() {
         .reduce((sum, t) => sum + t.amount, 0);
     
     // 始终展示本地计算结果
-    document.getElementById('totalBalance').textContent = `¥${centsToNumber(totalBalanceCents).toFixed(2)}`;
-    document.getElementById('monthlyIncome').textContent = `¥${centsToNumber(monthlyIncomeCents).toFixed(2)}`;
-    document.getElementById('monthlyExpense').textContent = `¥${centsToNumber(monthlyExpenseCents).toFixed(2)}`;
+    const totalBalanceEl = document.getElementById('totalBalance');
+    const monthlyIncomeEl = document.getElementById('monthlyIncome');
+    const monthlyExpenseEl = document.getElementById('monthlyExpense');
+    if (totalBalanceEl) totalBalanceEl.textContent = `¥${centsToNumber(totalBalanceCents).toFixed(2)}`;
+    if (monthlyIncomeEl) monthlyIncomeEl.textContent = `¥${centsToNumber(monthlyIncomeCents).toFixed(2)}`;
+    if (monthlyExpenseEl) monthlyExpenseEl.textContent = `¥${centsToNumber(monthlyExpenseCents).toFixed(2)}`;
     
     // 计算本月变化
     const monthChange = centsToNumber(monthlyIncomeCents - monthlyExpenseCents);
-    document.getElementById('monthChange').textContent = `${monthChange >= 0 ? '+' : ''}¥${monthChange.toFixed(2)}`;
+    const monthChangeEl = document.getElementById('monthChange');
+    if (monthChangeEl) monthChangeEl.textContent = `${monthChange >= 0 ? '+' : ''}¥${monthChange.toFixed(2)}`;
     
     // 计算同比变化
     const incomeChange = lastMonthIncome === 0 ? 0 : ((centsToNumber(monthlyIncomeCents) - lastMonthIncome) / lastMonthIncome) * 100;
     const expenseChange = lastMonthExpense === 0 ? 0 : ((centsToNumber(monthlyExpenseCents) - lastMonthExpense) / lastMonthExpense) * 100;
     
-    document.getElementById('incomeChange').textContent = (incomeChange >= 0 ? `+${incomeChange.toFixed(2)}%` : `${incomeChange.toFixed(2)}%`);
-    document.getElementById('expenseChange').textContent = (expenseChange >= 0 ? `+${expenseChange.toFixed(2)}%` : `${expenseChange.toFixed(2)}%`);
+    const incomeChangeEl = document.getElementById('incomeChange');
+    const expenseChangeEl = document.getElementById('expenseChange');
+    if (incomeChangeEl) incomeChangeEl.textContent = (incomeChange >= 0 ? `+${incomeChange.toFixed(2)}%` : `${incomeChange.toFixed(2)}%`);
+    if (expenseChangeEl) expenseChangeEl.textContent = (expenseChange >= 0 ? `+${expenseChange.toFixed(2)}%` : `${expenseChange.toFixed(2)}%`);
 
     currentMonthlyExpense = centsToNumber(monthlyExpenseCents);
     updateBudgetUI();
@@ -505,9 +567,10 @@ function updateFinancialSummary() {
 
 // 初始化图表
 function initCharts() {
-    // 趋势图
-    const trendCtx = document.getElementById('trendChart').getContext('2d');
-    trendChart = new Chart(trendCtx, {
+    const trendCanvas = document.getElementById('trendChart');
+    if (trendCanvas) {
+        const trendCtx = trendCanvas.getContext('2d');
+        trendChart = new Chart(trendCtx, {
         type: 'line',
         data: {
             labels: [],
@@ -549,11 +612,61 @@ function initCharts() {
                 }
             }
         }
-    });
-    
-    // 支出分类饼图
-    const categoryCtx = document.getElementById('categoryChart').getContext('2d');
-    categoryChart = new Chart(categoryCtx, {
+        });
+    }
+
+    const analyticsTrendCanvas = document.getElementById('analyticsTrendChart');
+    if (analyticsTrendCanvas) {
+        const analyticsTrendCtx = analyticsTrendCanvas.getContext('2d');
+        analyticsTrendChart = new Chart(analyticsTrendCtx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                {
+                    label: '收入',
+                    data: [],
+                    borderColor: '#10B981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    tension: 0.3,
+                    fill: true
+                },
+                {
+                    label: '支出',
+                    data: [],
+                    borderColor: '#EF4444',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    tension: 0.3,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '¥' + value;
+                        }
+                    }
+                }
+            }
+        }
+        });
+    }
+
+    const categoryCanvas = document.getElementById('categoryChart');
+    if (categoryCanvas) {
+        const categoryCtx = categoryCanvas.getContext('2d');
+        categoryChart = new Chart(categoryCtx, {
         type: 'doughnut',
         data: {
             labels: [],
@@ -573,11 +686,13 @@ function initCharts() {
             },
             cutout: '70%'
         }
-    });
-    
-    // 收入分类饼图
-    const incomeCategoryCtx = document.getElementById('incomeCategoryChart').getContext('2d');
-    incomeCategoryChart = new Chart(incomeCategoryCtx, {
+        });
+    }
+
+    const incomeCategoryCanvas = document.getElementById('incomeCategoryChart');
+    if (incomeCategoryCanvas) {
+        const incomeCategoryCtx = incomeCategoryCanvas.getContext('2d');
+        incomeCategoryChart = new Chart(incomeCategoryCtx, {
         type: 'doughnut',
         data: {
             labels: [],
@@ -597,11 +712,13 @@ function initCharts() {
             },
             cutout: '70%'
         }
-    });
-    
-    // 月度收支对比柱状图
-    const monthlyComparisonCtx = document.getElementById('monthlyComparisonChart').getContext('2d');
-    monthlyComparisonChart = new Chart(monthlyComparisonCtx, {
+        });
+    }
+
+    const monthlyComparisonCanvas = document.getElementById('monthlyComparisonChart');
+    if (monthlyComparisonCanvas) {
+        const monthlyComparisonCtx = monthlyComparisonCanvas.getContext('2d');
+        monthlyComparisonChart = new Chart(monthlyComparisonCtx, {
         type: 'bar',
         data: {
             labels: [],
@@ -641,11 +758,13 @@ function initCharts() {
                 }
             }
         }
-    });
-    
-    // 收支比例饼图
-    const incomeExpenseRatioCtx = document.getElementById('incomeExpenseRatioChart').getContext('2d');
-    incomeExpenseRatioChart = new Chart(incomeExpenseRatioCtx, {
+        });
+    }
+
+    const incomeExpenseRatioCanvas = document.getElementById('incomeExpenseRatioChart');
+    if (incomeExpenseRatioCanvas) {
+        const incomeExpenseRatioCtx = incomeExpenseRatioCanvas.getContext('2d');
+        incomeExpenseRatioChart = new Chart(incomeExpenseRatioCtx, {
         type: 'pie',
         data: {
             labels: ['收入', '支出'],
@@ -676,18 +795,28 @@ function initCharts() {
                 }
             }
         }
-    });
-    
+        });
+    }
+
     updateCharts();
 }
 
 // 更新图表
 function updateCharts() {
-    updateTrendChart('month');
-    updateCategoryChart();
-    updateIncomeCategoryChart();
+    if (isCurrentPage('analytics')) {
+        updateAnalyticsTrendChart(analyticsTrendPeriod);
+        updateCategoryChart(analyticsTrendPeriod);
+        updateIncomeCategoryChart(analyticsTrendPeriod);
+        updateMonthlyComparisonChart();
+        updateIncomeExpenseRatioChart(analyticsTrendPeriod);
+        return;
+    }
+
+    updateTrendChart(homeTrendPeriod);
+    updateCategoryChart('month');
+    updateIncomeCategoryChart('month');
     updateMonthlyComparisonChart();
-    updateIncomeExpenseRatioChart();
+    updateIncomeExpenseRatioChart('month');
 }
 
 // 清空图表数据的辅助函数
@@ -698,6 +827,14 @@ function resetChartsData() {
             if (trendChart.data.datasets && trendChart.data.datasets[0]) trendChart.data.datasets[0].data = [];
             if (trendChart.data.datasets && trendChart.data.datasets[1]) trendChart.data.datasets[1].data = [];
             trendChart.update();
+        }
+    } catch (e) {}
+    try {
+        if (analyticsTrendChart) {
+            analyticsTrendChart.data.labels = [];
+            if (analyticsTrendChart.data.datasets && analyticsTrendChart.data.datasets[0]) analyticsTrendChart.data.datasets[0].data = [];
+            if (analyticsTrendChart.data.datasets && analyticsTrendChart.data.datasets[1]) analyticsTrendChart.data.datasets[1].data = [];
+            analyticsTrendChart.update();
         }
     } catch (e) {}
     try {
@@ -738,6 +875,7 @@ function resetChartsData() {
 
 // 更新趋势图
 function updateTrendChart(period) {
+    if (!trendChart) return;
     const transactions = getTransactions();
     const now = new Date();
     let labels = [];
@@ -819,20 +957,94 @@ function updateTrendChart(period) {
     trendChart.update();
 }
 
-// 更新分类图表
-function updateCategoryChart() {
-    const transactions = getTransactions();
+function getAnalyticsRange(period) {
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    
-    // 获取本月支出
-    const monthlyExpenses = transactions.filter(t => {
-        const transactionDate = new Date(t.date);
-        return t.type === 'expense' && 
-               transactionDate.getMonth() === currentMonth && 
-               transactionDate.getFullYear() === currentYear;
+    const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const endOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+
+    if (period === 'day') {
+        const start = startOfDay(now);
+        return { start, end: endOfDay(now), unit: 'hour' };
+    }
+
+    if (period === 'week') {
+        const day = now.getDay();
+        const diffToMonday = (day + 6) % 7;
+        const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMonday);
+        const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
+        return { start: startOfDay(monday), end: endOfDay(sunday), unit: 'day' };
+    }
+
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    return { start: monthStart, end: monthEnd, unit: 'day' };
+}
+
+function buildAnalyticsSeries(transactions, period) {
+    const now = new Date();
+    const { start, end, unit } = getAnalyticsRange(period);
+    const labels = [];
+    const incomeData = [];
+    const expenseData = [];
+
+    if (period === 'day') {
+        for (let hour = 0; hour < 24; hour++) {
+            const hourLabel = `${String(hour).padStart(2, '0')}:00`;
+            labels.push(hourLabel);
+            const hourTransactions = transactions.filter(t => {
+                const d = new Date(t.date + 'T00:00:00');
+                return d >= start && d <= end && new Date(t.createdAt || t.created_at || t.date).getHours() === hour;
+            });
+            const hourIncomeCents = hourTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + getAmountCents(t), 0);
+            const hourExpenseCents = hourTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + getAmountCents(t), 0);
+            incomeData.push(centsToNumber(hourIncomeCents));
+            expenseData.push(centsToNumber(hourExpenseCents));
+        }
+        return { labels, incomeData, expenseData, start, end };
+    }
+
+    const current = new Date(start);
+    while (current <= end) {
+        const label = period === 'week'
+            ? `${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`
+            : `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
+        labels.push(label);
+        const dayKey = formatDate(current);
+        const dayTransactions = transactions.filter(t => t.date === dayKey);
+        const dayIncomeCents = dayTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + getAmountCents(t), 0);
+        const dayExpenseCents = dayTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + getAmountCents(t), 0);
+        incomeData.push(centsToNumber(dayIncomeCents));
+        expenseData.push(centsToNumber(dayExpenseCents));
+        current.setDate(current.getDate() + 1);
+    }
+
+    return { labels, incomeData, expenseData, start, end };
+}
+
+function getTransactionsForPeriod(transactions, period) {
+    const { start, end } = getAnalyticsRange(period);
+    return transactions.filter(t => {
+        const d = new Date(t.date);
+        return d >= start && d <= end;
     });
+}
+
+function updateAnalyticsTrendChart(period) {
+    if (!analyticsTrendChart) return;
+    const transactions = getTransactions();
+    const series = buildAnalyticsSeries(transactions, period);
+    analyticsTrendChart.data.labels = series.labels;
+    analyticsTrendChart.data.datasets[0].data = series.incomeData;
+    analyticsTrendChart.data.datasets[1].data = series.expenseData;
+    analyticsTrendChart.update();
+}
+
+// 更新分类图表
+function updateCategoryChart(period = 'month') {
+    if (!categoryChart) return;
+    const transactions = getTransactions();
+    const scopedTransactions = getTransactionsForPeriod(transactions, period);
+    const monthlyExpenses = scopedTransactions.filter(t => t.type === 'expense');
     
     // 按分类统计
     const categoryStats = {};
@@ -859,12 +1071,13 @@ function updateCategoryChart() {
     
     // 更新分类列表
     const categoryList = document.getElementById('categoryList');
+    if (!categoryList) return;
     categoryList.innerHTML = '';
     
     if (categories.length === 0) {
         categoryList.innerHTML = `
             <div class="text-center py-4 text-gray-500 text-sm">
-                本月暂无支出
+                所选周期暂无支出
             </div>
         `;
         return;
@@ -893,19 +1106,11 @@ function updateCategoryChart() {
 }
 
 // 更新收入分类图表
-function updateIncomeCategoryChart() {
+function updateIncomeCategoryChart(period = 'month') {
+    if (!incomeCategoryChart) return;
     const transactions = getTransactions();
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    
-    // 获取本月收入
-    const monthlyIncomes = transactions.filter(t => {
-        const transactionDate = new Date(t.date);
-        return t.type === 'income' && 
-               transactionDate.getMonth() === currentMonth && 
-               transactionDate.getFullYear() === currentYear;
-    });
+    const scopedTransactions = getTransactionsForPeriod(transactions, period);
+    const monthlyIncomes = scopedTransactions.filter(t => t.type === 'income');
     
     // 按分类统计
     const categoryStats = {};
@@ -932,12 +1137,13 @@ function updateIncomeCategoryChart() {
     
     // 更新收入分类列表
     const incomeCategoryList = document.getElementById('incomeCategoryList');
+    if (!incomeCategoryList) return;
     incomeCategoryList.innerHTML = '';
     
     if (categories.length === 0) {
         incomeCategoryList.innerHTML = `
             <div class="text-center py-4 text-gray-500 text-sm">
-                本月暂无收入
+                所选周期暂无收入
             </div>
         `;
         return;
@@ -967,6 +1173,7 @@ function updateIncomeCategoryChart() {
 
 // 更新月度收支对比图表
 function updateMonthlyComparisonChart() {
+    if (!monthlyComparisonChart) return;
     const transactions = getTransactions();
     const now = new Date();
     
@@ -1005,18 +1212,10 @@ function updateMonthlyComparisonChart() {
 }
 
 // 更新收支比例图表
-function updateIncomeExpenseRatioChart() {
+function updateIncomeExpenseRatioChart(period = 'month') {
+    if (!incomeExpenseRatioChart) return;
     const transactions = getTransactions();
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    
-    // 获取本月收支
-    const monthlyTransactions = transactions.filter(t => {
-        const transactionDate = new Date(t.date);
-        return transactionDate.getMonth() === currentMonth && 
-               transactionDate.getFullYear() === currentYear;
-    });
+    const monthlyTransactions = getTransactionsForPeriod(transactions, period);
     
     const monthlyIncomeCents = monthlyTransactions
         .filter(t => t.type === 'income')
@@ -1137,7 +1336,7 @@ async function getTransactionsForExport() {
 
 function prepareExportRows(transactions) {
     return [...transactions]
-        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .sort((a, b) => getTransactionSortKey(b) - getTransactionSortKey(a))
         .map(t => {
             const categoryName = t.category ? (t.category.name || '') : '';
             const amountNum = centsToNumber(getAmountCents(t));
@@ -1232,6 +1431,7 @@ function openTransactionModal(transactionId) {
     const transaction = transactions.find(t => t.id === transactionId);
     
     if (!transaction) return;
+    if (!modalContent || !deleteTransactionBtn || !editTransactionBtn || !transactionModal) return;
     
     const isExpense = transaction.type === 'expense';
     
@@ -1267,7 +1467,7 @@ function openTransactionModal(transactionId) {
 
 // 关闭模态框
 function closeModal() {
-    transactionModal.classList.add('hidden');
+    if (transactionModal) transactionModal.classList.add('hidden');
 }
 
 // 删除当前交易
@@ -1308,23 +1508,30 @@ function editCurrentTransaction() {
     editingTransactionId = transactionId;
     setTransactionType(transaction.type);
     amountInput.value = transaction.amount;
-    document.getElementById('dateInput').value = transaction.date;
-    document.getElementById('noteInput').value = transaction.note || '';
+    const dateInput = document.getElementById('dateInput');
+    const noteInput = document.getElementById('noteInput');
+    if (dateInput) dateInput.value = transaction.date;
+    if (noteInput) noteInput.value = transaction.note || '';
     selectedCategory = transaction.category ? transaction.category.id : null;
     renderCategories();
     updateSaveButtonState();
     closeModal();
-    document.querySelector('.lg\\:col-span-1').scrollIntoView({ behavior: 'smooth' });
+    const editorSection = document.querySelector('.lg\\:col-span-1');
+    if (editorSection && typeof editorSection.scrollIntoView === 'function') {
+        editorSection.scrollIntoView({ behavior: 'smooth' });
+    }
     showToast('请修改交易信息并保存');
 }
 
 // 查看所有交易
 function viewAllTransactions() {
+    if (!allTransactionsModal) return;
     renderAllTransactions();
     allTransactionsModal.classList.remove('hidden');
 }
 
 function renderAllTransactions() {
+    if (!allTransactionsList) return;
     const q = (allSearchInput && allSearchInput.value || '').trim().toLowerCase();
     const typeFilter = (allTypeFilter && allTypeFilter.value) || 'all';
     let list = getTransactions()
@@ -1338,7 +1545,7 @@ function renderAllTransactions() {
             note: t.note || '',
             createdAt: t.createdAt || t.created_at
         }))
-        .sort((a, b) => new Date(b.date) - new Date(a.date));
+        .sort((a, b) => getTransactionSortKey(b) - getTransactionSortKey(a));
 
     // 日期范围过滤
     const { start, end } = computeRange(allRange);
@@ -1461,13 +1668,18 @@ function editTransactionById(id) {
     editingTransactionId = id;
     setTransactionType(transaction.type);
     amountInput.value = centsToNumber(getAmountCents(transaction));
-    document.getElementById('dateInput').value = transaction.date;
-    document.getElementById('noteInput').value = transaction.note || '';
+    const dateInput = document.getElementById('dateInput');
+    const noteInput = document.getElementById('noteInput');
+    if (dateInput) dateInput.value = transaction.date;
+    if (noteInput) noteInput.value = transaction.note || '';
     selectedCategory = transaction.category ? transaction.category.id : null;
     renderCategories();
     updateSaveButtonState();
-    allTransactionsModal.classList.add('hidden');
-    document.querySelector('.lg\:col-span-1').scrollIntoView({ behavior: 'smooth' });
+    if (allTransactionsModal) allTransactionsModal.classList.add('hidden');
+    const editorSection = document.querySelector('.lg\\:col-span-1');
+    if (editorSection && typeof editorSection.scrollIntoView === 'function') {
+        editorSection.scrollIntoView({ behavior: 'smooth' });
+    }
     showToast('已载入至表单，请修改后保存');
 }
 

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>预算与导出 - 简易记账软件</title>
+    <meta name="api-base" content="">
+    <script src="https://cdn.tailwindcss.com/3.3.3"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#4F46E5',
+                        secondary: '#10B981',
+                        danger: '#EF4444',
+                        neutral: '#6B7280',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="min-h-screen" data-page="settings">
+    <header class="sticky top-0 z-50 glass-effect border-b border-gray-200">
+        <div class="container mx-auto px-4 py-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div class="flex items-center space-x-2">
+                <i class="fas fa-wallet text-primary text-2xl"></i>
+                <h1 class="text-xl font-bold text-gray-800">简易记账</h1>
+            </div>
+            <nav class="app-nav flex flex-wrap gap-2">
+                <a href="index.html" class="nav-link">总览</a>
+                <a href="transactions.html" class="nav-link">记账/交易</a>
+                <a href="analytics.html" class="nav-link">统计分析</a>
+                <a href="settings.html" class="nav-link is-active">预算/导出/备份</a>
+            </nav>
+            <div class="flex items-center space-x-2">
+                <span id="currentUserDisplay" class="text-sm text-gray-600">游客</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 py-6">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="bg-white rounded-xl p-6 card-shadow h-full">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold text-gray-800">月度预算</h3>
+                    <span id="budgetStatus" class="text-sm text-gray-500">当前预算：¥0.00</span>
+                </div>
+                <p id="budgetSummary" class="text-sm text-gray-600 mb-4">本月已支出 ¥0.00，剩余 ¥0.00。</p>
+                <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div class="relative flex-1">
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">¥</span>
+                        <input type="number" id="budgetInput" class="w-full pl-8 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none input-focus" placeholder="设置月度预算" min="0" step="0.01">
+                    </div>
+                    <button id="saveBudgetBtn" class="px-5 py-3 bg-secondary text-white font-medium rounded-lg transition-custom hover:bg-secondary/90">保存预算</button>
+                </div>
+                <p id="budgetWarning" class="hidden mt-4 text-sm font-medium text-danger"></p>
+            </div>
+
+            <div class="bg-white rounded-xl p-6 card-shadow h-full flex flex-col justify-between">
+                <div>
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold text-gray-800">数据导出</h3>
+                        <span class="text-sm text-gray-500">下载您的收支记录</span>
+                    </div>
+                    <p class="text-sm text-gray-600">支持将本月及历史交易记录导出为 CSV 或 Excel 文件，方便备份与统计分析。</p>
+                </div>
+                <div class="mt-6 flex flex-col sm:flex-row sm:items-center gap-3">
+                    <button id="exportCsvBtn" class="flex-1 px-4 py-3 border border-primary text-primary rounded-lg transition-custom hover:bg-primary hover:text-white">
+                        <i class="fas fa-file-csv mr-2"></i>导出 CSV
+                    </button>
+                    <button id="exportExcelBtn" class="flex-1 px-4 py-3 border border-primary text-primary rounded-lg transition-custom hover:bg-primary hover:text-white">
+                        <i class="fas fa-file-excel mr-2"></i>导出 Excel
+                    </button>
+                </div>
+                <div class="mt-4 border-t pt-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="text-sm font-medium text-gray-800">数据备份</h4>
+                        <span id="backupStatus" class="text-xs text-gray-500">未备份</span>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                        <button id="backupBtn" class="px-4 py-2 bg-primary text-white rounded-lg transition-custom hover:bg-primary/90 flex-1">
+                            <i class="fas fa-database mr-2"></i>手动备份
+                        </button>
+                        <label class="flex-1">
+                            <input type="file" id="restoreFileInput" accept="application/json" class="hidden">
+                            <button id="restoreBtn" type="button" class="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white hover:bg-gray-50">从本地恢复</button>
+                        </label>
+                    </div>
+                    <p id="backupHint" class="text-xs text-gray-500 mt-2">备份为 JSON 文件；恢复会覆盖本地游客数据。</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

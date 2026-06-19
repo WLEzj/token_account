@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>统计分析 - 简易记账软件</title>
+    <meta name="api-base" content="">
+    <script src="https://cdn.tailwindcss.com/3.3.3"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#4F46E5',
+                        secondary: '#10B981',
+                        danger: '#EF4444',
+                        neutral: '#6B7280',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="min-h-screen" data-page="analytics">
+    <header class="sticky top-0 z-50 glass-effect border-b border-gray-200">
+        <div class="container mx-auto px-4 py-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div class="flex items-center space-x-2">
+                <i class="fas fa-wallet text-primary text-2xl"></i>
+                <h1 class="text-xl font-bold text-gray-800">简易记账</h1>
+            </div>
+            <nav class="app-nav flex flex-wrap gap-2">
+                <a href="index.html" class="nav-link">总览</a>
+                <a href="transactions.html" class="nav-link">记账/交易</a>
+                <a href="analytics.html" class="nav-link is-active">统计分析</a>
+                <a href="settings.html" class="nav-link">预算/导出/备份</a>
+            </nav>
+            <div class="flex items-center space-x-2">
+                <span id="currentUserDisplay" class="text-sm text-gray-600">游客</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 py-6">
+        <div class="bg-white rounded-xl p-6 card-shadow mb-6">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-3">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-800">收支趋势</h3>
+                    <p class="text-sm text-gray-500 mt-1">按日、周、月切换统计窗口，查看真实聚合结果。</p>
+                </div>
+                <div class="flex space-x-2">
+                    <button class="analytics-time-filter-btn px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-600 hover:bg-gray-200 transition-custom" data-period="day">日</button>
+                    <button class="analytics-time-filter-btn px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-600 hover:bg-gray-200 transition-custom" data-period="week">周</button>
+                    <button class="analytics-time-filter-btn px-3 py-1 rounded-full text-sm bg-primary text-white" data-period="month">月</button>
+                </div>
+            </div>
+            <div class="h-72"><canvas id="analyticsTrendChart"></canvas></div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <div class="bg-white rounded-xl p-6 card-shadow">
+                <h3 class="text-lg font-semibold text-gray-800 mb-6">月度收支对比</h3>
+                <div class="h-72"><canvas id="monthlyComparisonChart"></canvas></div>
+            </div>
+            <div class="bg-white rounded-xl p-6 card-shadow">
+                <h3 class="text-lg font-semibold text-gray-800 mb-6">收支比例</h3>
+                <div class="h-72"><canvas id="incomeExpenseRatioChart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="bg-white rounded-xl p-6 card-shadow">
+                <h3 class="text-lg font-semibold text-gray-800 mb-6">收入分类</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="h-72"><canvas id="incomeCategoryChart"></canvas></div>
+                    <div class="space-y-3">
+                        <div id="incomeCategoryList" class="max-h-72 overflow-y-auto custom-scrollbar"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl p-6 card-shadow">
+                <h3 class="text-lg font-semibold text-gray-800 mb-6">支出分类</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="h-72"><canvas id="categoryChart"></canvas></div>
+                    <div class="space-y-3">
+                        <div id="categoryList" class="max-h-72 overflow-y-auto custom-scrollbar"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
