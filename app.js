@@ -39,6 +39,10 @@ let selectedCategory = null; // 当前选择的分类
 let currentUser = null; // 当前用户（null表示游客）
 let editingTransactionId = null; // 编辑中的交易ID
 let transactionsCache = []; // 从服务器加载的交易数据缓存
+let supabaseClient = null; // Supabase 浏览器客户端
+let lastAuthUserId = null; // 用于识别本次页面生命周期内的登录切换
+let migrationPromptedUserId = null; // 避免同一次登录重复提示游客数据迁移
+let isSavingTransaction = false; // 防止重复点击导致同一笔交易重复保存
 
 // 预算相关变量
 let currentBudgetAmount = 0; // 当前预算金额
@@ -72,8 +76,34 @@ function getAmountCents(t) {
     return 0;
 }
 
+function toSecondISOString(date = new Date()) {
+    return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function getTransactionDateTime(t) {
+    if (!t) return '';
+    return t.transactionAt || t.transaction_at || t.createdAt || t.created_at || (t.date ? `${t.date}T00:00:00` : '');
+}
+
+function buildTransactionFingerprint(payload) {
+    const amountCents = typeof payload.amountCents === 'number' ? payload.amountCents : parseAmountToCents(payload.amount);
+    const categoryId = payload.category && payload.category.id ? payload.category.id : '';
+    const note = (payload.note || '').trim();
+    return [payload.type, amountCents, payload.date, categoryId, note].join('|');
+}
+
+function isDuplicateTransaction(payload, transactions = getTransactions(), excludeId = null) {
+    const fingerprint = buildTransactionFingerprint(payload);
+    return transactions.some(t => t.id !== excludeId && buildTransactionFingerprint(t) === fingerprint);
+}
+
 function getTransactionSortKey(t) {
     if (!t) return 0;
+    const transactionAt = getTransactionDateTime(t);
+    if (transactionAt) {
+        const transactionAtMs = Date.parse(transactionAt);
+        if (!Number.isNaN(transactionAtMs)) return transactionAtMs;
+    }
     const createdAt = t.createdAt || t.created_at;
     if (createdAt) {
         const createdAtMs = Date.parse(createdAt);
@@ -140,8 +170,13 @@ const restoreBtn = document.getElementById('restoreBtn'); // 恢复按钮
 const restoreFileInput = document.getElementById('restoreFileInput'); // 恢复文件输入
 const backupStatus = document.getElementById('backupStatus'); // 备份状态
 
+// 认证相关元素
+const currentUserDisplay = document.getElementById('currentUserDisplay');
+const authOpenBtn = document.getElementById('authOpenBtn');
+const signOutBtn = document.getElementById('signOutBtn');
+
 // ----------------- 应用初始化（恢复事件绑定与图表/分类渲染） -----------------
-function init() {
+async function init() {
     if (isCurrentPage('home', 'transactions')) {
         if (expenseBtn && incomeBtn) {
             setTransactionType('expense');
@@ -215,17 +250,419 @@ function init() {
         if (restoreFileInput) restoreFileInput.addEventListener('change', handleRestoreFile);
     }
 
+    injectAuthModal();
+    bindAuthEvents();
+    await initAuth();
+
     if (isCurrentPage('home', 'analytics')) {
         initCharts();
+    }
+
+    if (isCurrentPage('home', 'transactions', 'analytics', 'settings')) {
+        await loadTransactions();
+    }
+
+    if (isCurrentPage('home', 'analytics')) {
         updateCharts();
     }
 
-    if (isCurrentPage('home', 'transactions')) {
-        loadTransactions();
+    if (isCurrentPage('settings')) {
+        await loadBudget();
+    }
+}
+
+// ----------------- Supabase 认证与数据服务 -----------------
+function getSupabaseClient() {
+    if (supabaseClient) return supabaseClient;
+    const config = window.SUPABASE_CONFIG;
+    if (!config || !config.url || !config.anonKey) return null;
+    if (config.url.includes('your-project-ref') || config.anonKey.includes('your-supabase-anon-key')) return null;
+    if (!window.supabase || typeof window.supabase.createClient !== 'function') return null;
+    supabaseClient = window.supabase.createClient(config.url, config.anonKey);
+    return supabaseClient;
+}
+
+function isSupabaseConfigured() {
+    return Boolean(getSupabaseClient());
+}
+
+async function initAuth() {
+    const client = getSupabaseClient();
+    if (!client) {
+        updateAuthUI();
+        return;
     }
 
+    try {
+        const { data, error } = await client.auth.getSession();
+        if (error) throw error;
+        currentUser = data.session ? data.session.user : null;
+    } catch (e) {
+        console.error('初始化登录状态失败', e);
+        currentUser = null;
+    }
+
+    updateAuthUI();
+
+    lastAuthUserId = currentUser ? currentUser.id : null;
+
+    client.auth.onAuthStateChange(async (_event, session) => {
+        const previousUserId = lastAuthUserId;
+        currentUser = session ? session.user : null;
+        const currentUserId = currentUser ? currentUser.id : null;
+        lastAuthUserId = currentUserId;
+        if (!currentUser) {
+            transactionsCache = [];
+            migrationPromptedUserId = null;
+        }
+        updateAuthUI();
+        await refreshPageData();
+        if (currentUser && previousUserId !== currentUserId) promptGuestDataMigration();
+    });
+}
+
+async function refreshPageData() {
+    if (isCurrentPage('home', 'transactions', 'analytics', 'settings')) {
+        await loadTransactions();
+    }
     if (isCurrentPage('settings')) {
-        loadBudget();
+        await loadBudget();
+    }
+    updateCharts();
+    if (allTransactionsModal && !allTransactionsModal.classList.contains('hidden')) {
+        renderAllTransactions();
+    }
+}
+
+function bindAuthEvents() {
+    if (authOpenBtn) authOpenBtn.addEventListener('click', openAuthModal);
+    if (signOutBtn) signOutBtn.addEventListener('click', handleSignOut);
+
+    const closeBtn = document.getElementById('closeAuthModalBtn');
+    const signInBtn = document.getElementById('signInBtn');
+    const signUpBtn = document.getElementById('signUpBtn');
+    const importGuestDataBtn = document.getElementById('importGuestDataBtn');
+    const modal = document.getElementById('authModal');
+
+    if (closeBtn) closeBtn.addEventListener('click', closeAuthModal);
+    if (modal) modal.addEventListener('click', e => { if (e.target === modal) closeAuthModal(); });
+    if (signInBtn) signInBtn.addEventListener('click', handleSignIn);
+    if (signUpBtn) signUpBtn.addEventListener('click', handleSignUp);
+    if (importGuestDataBtn) importGuestDataBtn.addEventListener('click', migrateGuestDataToAccount);
+}
+
+function injectAuthModal() {
+    if (document.getElementById('authModal')) return;
+    const modal = document.createElement('div');
+    modal.id = 'authModal';
+    modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden';
+    modal.innerHTML = `
+        <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4 card-shadow animate-fadeIn">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-800">登录 / 注册</h3>
+                <button id="closeAuthModalBtn" class="text-gray-500 hover:text-gray-700"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">邮箱</label>
+                    <input id="authEmailInput" type="email" class="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none input-focus" placeholder="you@example.com" autocomplete="email">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">密码</label>
+                    <input id="authPasswordInput" type="password" class="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none input-focus" placeholder="至少 6 位" autocomplete="current-password">
+                </div>
+                <p id="authStatus" class="text-sm text-gray-500 min-h-[1.25rem]"></p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button id="signInBtn" class="px-4 py-3 bg-primary text-white rounded-lg transition-custom hover:bg-primary/90">登录</button>
+                    <button id="signUpBtn" class="px-4 py-3 border border-primary text-primary rounded-lg transition-custom hover:bg-primary hover:text-white">注册</button>
+                </div>
+                <div id="guestDataImportPanel" class="hidden border-t pt-4 mt-4">
+                    <p class="text-sm text-gray-600 mb-3">检测到本地游客数据，可导入到当前账号。</p>
+                    <button id="importGuestDataBtn" class="w-full px-4 py-2 bg-secondary text-white rounded-lg transition-custom hover:bg-secondary/90">导入游客数据</button>
+                </div>
+                <p class="text-xs text-gray-500">需要先配置 supabase-config.js。浏览器只使用 anon key，数据隔离由 Supabase RLS 保证。</p>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function updateAuthUI() {
+    const email = currentUser && currentUser.email ? currentUser.email : '游客';
+    if (currentUserDisplay) currentUserDisplay.textContent = email;
+    if (authOpenBtn) authOpenBtn.classList.toggle('hidden', Boolean(currentUser));
+    if (signOutBtn) signOutBtn.classList.toggle('hidden', !currentUser);
+    const importPanel = document.getElementById('guestDataImportPanel');
+    if (importPanel) importPanel.classList.toggle('hidden', !(currentUser && hasGuestData()));
+}
+
+function openAuthModal() {
+    if (!isSupabaseConfigured()) {
+        showToast('请先配置 supabase-config.js');
+        return;
+    }
+    updateAuthUI();
+    const modal = document.getElementById('authModal');
+    if (modal) modal.classList.remove('hidden');
+}
+
+function closeAuthModal() {
+    const modal = document.getElementById('authModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function getAuthFormValues() {
+    const email = (document.getElementById('authEmailInput')?.value || '').trim();
+    const password = document.getElementById('authPasswordInput')?.value || '';
+    return { email, password };
+}
+
+function setAuthStatus(message, isError = false) {
+    const status = document.getElementById('authStatus');
+    if (!status) return;
+    status.textContent = message;
+    status.classList.toggle('text-danger', isError);
+    status.classList.toggle('text-gray-500', !isError);
+}
+
+async function handleSignUp() {
+    const client = getSupabaseClient();
+    if (!client) return showToast('请先配置 Supabase');
+    const { email, password } = getAuthFormValues();
+    if (!email || password.length < 6) {
+        setAuthStatus('请输入邮箱和至少 6 位密码', true);
+        return;
+    }
+    setAuthStatus('正在注册...');
+    const { data, error } = await client.auth.signUp({ email, password });
+    if (error) {
+        setAuthStatus(error.message, true);
+        return;
+    }
+    if (data.session) {
+        closeAuthModal();
+        showToast('注册并登录成功');
+    } else {
+        setAuthStatus('注册成功，请按 Supabase 设置检查邮箱确认后再登录');
+    }
+}
+
+async function handleSignIn() {
+    const client = getSupabaseClient();
+    if (!client) return showToast('请先配置 Supabase');
+    const { email, password } = getAuthFormValues();
+    if (!email || !password) {
+        setAuthStatus('请输入邮箱和密码', true);
+        return;
+    }
+    setAuthStatus('正在登录...');
+    const { error } = await client.auth.signInWithPassword({ email, password });
+    if (error) {
+        setAuthStatus(error.message, true);
+        return;
+    }
+    closeAuthModal();
+    showToast('登录成功');
+}
+
+async function handleSignOut() {
+    const client = getSupabaseClient();
+    if (!client) return;
+    const { error } = await client.auth.signOut();
+    if (error) {
+        console.error('退出登录失败', error);
+        showToast('退出登录失败');
+        return;
+    }
+    currentUser = null;
+    transactionsCache = [];
+    updateAuthUI();
+    await refreshPageData();
+    showToast('已退出登录');
+}
+
+function normalizeSupabaseTransaction(row) {
+    const amountCents = Number(row.amount_cents) || 0;
+    return {
+        id: row.id,
+        type: row.type,
+        amount: centsToNumber(amountCents),
+        amountCents,
+        date: row.date,
+        transactionAt: row.transaction_at || row.created_at,
+        category: row.category || { id: 'other', name: '其他', icon: 'ellipsis-h', color: '#6B7280' },
+        note: row.note || '',
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+    };
+}
+
+function toSupabaseTransactionPayload(payload) {
+    if (!currentUser) throw new Error('未登录');
+    const amountCents = typeof payload.amountCents === 'number' ? payload.amountCents : parseAmountToCents(payload.amount);
+    return {
+        user_id: currentUser.id,
+        type: payload.type,
+        amount_cents: amountCents,
+        date: payload.date,
+        transaction_at: payload.transactionAt || toSecondISOString(),
+        category: payload.category,
+        note: payload.note || '',
+        updated_at: toSecondISOString()
+    };
+}
+
+async function loadUserTransactions() {
+    const client = getSupabaseClient();
+    if (!client || !currentUser) {
+        transactionsCache = [];
+        return [];
+    }
+    const { data, error } = await client
+        .from('transactions')
+        .select('*')
+        .order('transaction_at', { ascending: false })
+        .order('created_at', { ascending: false });
+    if (error) throw error;
+    transactionsCache = (data || []).map(normalizeSupabaseTransaction);
+    return transactionsCache;
+}
+
+async function createUserTransaction(payload) {
+    const client = getSupabaseClient();
+    if (!client) throw new Error('Supabase 未配置');
+    const { data: { user }, error: userError } = await client.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error('登录已过期，请重新登录');
+    currentUser = user;
+    await loadUserTransactions();
+    if (isDuplicateTransaction(payload, transactionsCache)) {
+        throw new Error('检测到相同交易，已阻止重复保存');
+    }
+    const { error } = await client.from('transactions').insert(toSupabaseTransactionPayload(payload));
+    if (error) throw error;
+}
+
+async function updateUserTransaction(id, payload) {
+    const client = getSupabaseClient();
+    if (!client) throw new Error('Supabase 未配置');
+    const { data: { user }, error: userError } = await client.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error('登录已过期，请重新登录');
+    currentUser = user;
+    await loadUserTransactions();
+    if (isDuplicateTransaction(payload, transactionsCache, id)) {
+        throw new Error('检测到相同交易，已阻止重复保存');
+    }
+    const { error } = await client
+        .from('transactions')
+        .update(toSupabaseTransactionPayload(payload))
+        .eq('id', id);
+    if (error) throw error;
+}
+
+async function deleteUserTransaction(id) {
+    const client = getSupabaseClient();
+    if (!client) throw new Error('Supabase 未配置');
+    const { data: { user }, error: userError } = await client.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error('登录已过期，请重新登录');
+    currentUser = user;
+    const { error } = await client.from('transactions').delete().eq('id', id);
+    if (error) throw error;
+}
+
+async function deleteTransactionById(id) {
+    return deleteUserTransaction(id);
+}
+
+async function loadUserBudget() {
+    const client = getSupabaseClient();
+    if (!client || !currentUser) return 0;
+    const { data, error } = await client
+        .from('budgets')
+        .select('amount_cents')
+        .eq('user_id', currentUser.id)
+        .maybeSingle();
+    if (error) throw error;
+    return data ? centsToNumber(Number(data.amount_cents) || 0) : 0;
+}
+
+async function saveUserBudget(amount) {
+    const client = getSupabaseClient();
+    if (!client || !currentUser) throw new Error('未登录');
+    const { error } = await client.from('budgets').upsert({
+        user_id: currentUser.id,
+        amount_cents: parseAmountToCents(amount),
+        updated_at: new Date().toISOString()
+    });
+    if (error) throw error;
+}
+
+function normalizeGuestTransactions() {
+    const key = 'transactions_guest';
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    try {
+        const arr = JSON.parse(raw);
+        if (!Array.isArray(arr)) return [];
+        return arr.map(t => {
+            const amountCents = typeof t.amountCents === 'number' ? t.amountCents : parseAmountToCents(t.amount);
+            return {
+                ...t,
+                amountCents,
+                amount: centsToNumber(amountCents),
+                transactionAt: t.transactionAt || t.transaction_at || t.createdAt || t.created_at,
+                createdAt: t.createdAt || t.created_at
+            };
+        });
+    } catch (e) {
+        console.error('解析本地交易数据失败', e);
+        return [];
+    }
+}
+
+function hasGuestData() {
+    return normalizeGuestTransactions().length > 0 || Boolean(localStorage.getItem('budget_guest'));
+}
+
+function promptGuestDataMigration() {
+    if (!currentUser || !hasGuestData()) return;
+    if (migrationPromptedUserId === currentUser.id) return;
+    migrationPromptedUserId = currentUser.id;
+    setTimeout(() => {
+        if (window.confirm('检测到本地游客数据，是否导入到当前账号？导入后本地游客数据会保留。')) {
+            migrateGuestDataToAccount();
+        }
+    }, 300);
+}
+
+async function migrateGuestDataToAccount() {
+    if (!currentUser) return showToast('请先登录');
+    const client = getSupabaseClient();
+    if (!client) return showToast('请先配置 Supabase');
+    try {
+        const guestTransactions = normalizeGuestTransactions();
+        if (guestTransactions.length > 0) {
+            await loadUserTransactions();
+            const rows = guestTransactions
+                .filter(t => !isDuplicateTransaction(t, transactionsCache))
+                .map(toSupabaseTransactionPayload);
+            if (rows.length > 0) {
+                const { error } = await client.from('transactions').insert(rows);
+                if (error) throw error;
+            }
+        }
+        const rawBudget = localStorage.getItem('budget_guest');
+        if (rawBudget != null) {
+            await saveUserBudget(Number(rawBudget) || 0);
+        }
+        await refreshPageData();
+        closeAuthModal();
+        showToast(`已导入 ${guestTransactions.length} 条游客交易`);
+    } catch (e) {
+        console.error('导入游客数据失败', e);
+        showToast('导入游客数据失败');
     }
 }
 
@@ -244,11 +681,13 @@ async function handleBackup() {
 }
 
 async function buildBackupPayload() {
-    const payload = { exportedAt: new Date().toISOString(), transactions: [], budget: 0 };
-    const raw = localStorage.getItem('transactions_guest');
-    payload.transactions = raw ? JSON.parse(raw) : [];
-    const b = localStorage.getItem('budget_guest');
-    payload.budget = b ? Number(b) : 0;
+    const payload = { exportedAt: new Date().toISOString(), transactions: getTransactions(), budget: currentBudgetAmount || 0 };
+    if (!currentUser) {
+        const b = localStorage.getItem('budget_guest');
+        payload.budget = b ? Number(b) : 0;
+    } else if (!isCurrentPage('settings')) {
+        payload.budget = await loadUserBudget();
+    }
     return payload;
 }
 
@@ -277,9 +716,32 @@ async function importBackupData(json) {
     if (!json || !Array.isArray(json.transactions)) throw new Error('无效备份格式');
     const transactions = json.transactions;
     const budget = Number(json.budget) || 0;
-    localStorage.setItem('transactions_guest', JSON.stringify(transactions));
-    localStorage.setItem('budget_guest', String(budget));
-    if (backupStatus) backupStatus.textContent = `恢复：覆盖本地数据 ${transactions.length} 条`;
+    if (currentUser) {
+        const client = getSupabaseClient();
+        const existingIds = transactionsCache.map(t => t.id);
+        if (existingIds.length > 0) {
+            const { error: deleteError } = await client.from('transactions').delete().in('id', existingIds);
+            if (deleteError) throw deleteError;
+        }
+        if (transactions.length > 0) {
+            const rows = transactions.map(t => toSupabaseTransactionPayload({
+                type: t.type,
+                amount: t.amount,
+                amountCents: getAmountCents(t),
+                date: t.date,
+                category: t.category,
+                note: t.note || ''
+            }));
+            const { error: insertError } = await client.from('transactions').insert(rows);
+            if (insertError) throw insertError;
+        }
+        await saveUserBudget(budget);
+        if (backupStatus) backupStatus.textContent = `恢复：覆盖账号数据 ${transactions.length} 条`;
+    } else {
+        localStorage.setItem('transactions_guest', JSON.stringify(transactions));
+        localStorage.setItem('budget_guest', String(budget));
+        if (backupStatus) backupStatus.textContent = `恢复：覆盖本地数据 ${transactions.length} 条`;
+    }
 }
 
 // 设置交易类型
@@ -338,6 +800,9 @@ function updateSaveButtonState() {
 
 // 保存交易
 async function saveTransaction() {
+    if (isSavingTransaction) return;
+    isSavingTransaction = true;
+    if (saveBtn) saveBtn.disabled = true;
     const amountInputValue = amountInput.value;
     const amountCents = parseAmountToCents(amountInputValue);
     const amount = centsToNumber(amountCents);
@@ -345,42 +810,44 @@ async function saveTransaction() {
     const note = document.getElementById('noteInput').value;
     const categories = currentType === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
     const category = categories.find(c => c.id === selectedCategory);
+    const existingTransaction = editingTransactionId ? getTransactions().find(t => t.id === editingTransactionId) : null;
 
     const payload = {
         type: currentType,
         amount: amount,
         date: date,
         category: category,
-        note: note
+        note: note,
+        amountCents: amountCents,
+        transactionAt: existingTransaction ? getTransactionDateTime(existingTransaction) : toSecondISOString()
     };
 
     try {
         if (currentUser) {
+            payload.amountCents = amountCents;
             if (editingTransactionId) {
-                await apiFetch(`/api/transactions/${editingTransactionId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
+                await updateUserTransaction(editingTransactionId, payload);
                 editingTransactionId = null;
             } else {
-                await apiFetch('/api/transactions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
+                await createUserTransaction(payload);
             }
         } else {
             const key = 'transactions_guest';
             const raw = localStorage.getItem(key);
             const arr = raw ? JSON.parse(raw) : [];
-            arr.push({ id: Date.now().toString(), ...payload, amountCents: amountCents, createdAt: new Date().toISOString() });
+            if (isDuplicateTransaction(payload, arr)) {
+                throw new Error('检测到相同交易，已阻止重复保存');
+            }
+            arr.push({ id: Date.now().toString(), ...payload, createdAt: payload.transactionAt });
             localStorage.setItem(key, JSON.stringify(arr));
         }
     } catch (e) {
-        console.error(e);
-        showToast('保存交易失败');
+        console.error('保存交易失败', e);
+        showToast(`保存交易失败：${e.message || '请检查 Supabase 表和 RLS 配置'}`);
         return;
+    } finally {
+        isSavingTransaction = false;
+        updateSaveButtonState();
     }
 
     // 重置表单
@@ -401,100 +868,86 @@ async function saveTransaction() {
 // 获取所有交易
 // 获取本地（guest）或从缓存返回
 function getTransactions() {
-    // Only return server-loaded transactions when logged in.
-    // Do not expose guest/local transactions in the main UI when not logged in.
     if (currentUser) return transactionsCache;
-    // guest: return transactions from localStorage but normalize to include amountCents
-    const key = 'transactions_guest';
-    const raw = localStorage.getItem(key);
-    if (!raw) return [];
-    try {
-        const arr = JSON.parse(raw);
-        if (!Array.isArray(arr)) return [];
-        return arr.map(t => {
-            // ensure amountCents exists
-            if (typeof t.amountCents !== 'number') {
-                t.amountCents = parseAmountToCents(t.amount);
-            }
-            return t;
-        });
-    } catch (e) {
-        console.error('解析本地交易数据失败', e);
-        return [];
+    return normalizeGuestTransactions();
+}
+
+function renderEmptyTransactionList() {
+    if (!transactionList) return;
+    transactionList.innerHTML = `
+        <div class="text-center py-10 text-gray-500">
+            <i class="fas fa-file-invoice-dollar text-4xl mb-3"></i>
+            <p>暂无交易记录</p>
+        </div>
+    `;
+}
+
+function renderRecentTransactions(transactions) {
+    if (!transactionList) return;
+    transactionList.innerHTML = '';
+    if (transactions.length === 0) {
+        renderEmptyTransactionList();
+        return;
     }
+    const recentTransactions = [...transactions]
+        .map(r => ({
+            id: r.id,
+            type: r.type,
+            amountCents: getAmountCents(r),
+            amount: centsToNumber(getAmountCents(r)),
+            date: r.date,
+            category: r.category,
+            note: r.note,
+            transactionAt: getTransactionDateTime(r),
+            createdAt: r.createdAt || r.created_at
+        }))
+        .sort((a, b) => getTransactionSortKey(b) - getTransactionSortKey(a))
+        .slice(0, 10);
+
+    recentTransactions.forEach(transaction => {
+        const transactionItem = document.createElement('div');
+        transactionItem.className = 'transaction-item flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:border-gray-200';
+        transactionItem.dataset.id = transaction.id;
+        const category = transaction.category || {};
+        const isExpense = transaction.type === 'expense';
+        const bg = category.color ? category.color + '20' : '#ddd';
+        const icon = category.icon || 'question-circle';
+        const color = category.color || '#999';
+        const name = category.name || '未分类';
+        transactionItem.innerHTML = `
+            <div class="flex items-center">
+                <div class="w-10 h-10 rounded-full flex items-center justify-center mr-3" style="background-color: ${bg}">
+                    <i class="fas fa-${icon}" style="color: ${color}"></i>
+                </div>
+                <div>
+                    <p class="font-medium">${name}</p>
+                    <p class="text-xs text-gray-500">${formatDate(transaction.date)}</p>
+                </div>
+            </div>
+            <div class="text-right">
+                <p class="font-bold ${isExpense ? 'text-danger' : 'text-secondary'}">${isExpense ? '-' : '+'}¥${Number(transaction.amount).toFixed(2)}</p>
+                ${transaction.note ? `<p class=\"text-xs text-gray-500\">${transaction.note}</p>` : ''}
+            </div>
+        `;
+        transactionItem.addEventListener('click', () => openTransactionModal(transaction.id));
+        transactionList.appendChild(transactionItem);
+    });
 }
 
 // 加载交易记录
 async function loadTransactions() {
-    if (!transactionList) {
-        updateFinancialSummary();
-        return;
+    try {
+        if (currentUser) await loadUserTransactions();
+    } catch (e) {
+        console.error('加载交易记录失败', e);
+        showToast('加载交易记录失败');
     }
-    transactionList.innerHTML = '';
-    if (!currentUser) {
-        // 游客模式：从 localStorage 读取并渲染
-        const key = 'transactions_guest';
-        let arr = [];
-        try {
-            const raw = localStorage.getItem(key);
-            arr = raw ? JSON.parse(raw) : [];
-        } catch (e) {
-            arr = [];
-        }
-        if (!Array.isArray(arr)) arr = [];
-        if (arr.length === 0) {
-            transactionList.innerHTML = `
-                <div class="text-center py-10 text-gray-500">
-                    <i class="fas fa-file-invoice-dollar text-4xl mb-3"></i>
-                    <p>暂无交易记录</p>
-                </div>
-            `;
-            updateFinancialSummary();
-            return;
-        }
-        const normalized = arr.map(r => ({
-            id: r.id,
-            type: r.type,
-            amountCents: typeof r.amountCents === 'number' ? r.amountCents : parseAmountToCents(r.amount),
-            amount: centsToNumber(typeof r.amountCents === 'number' ? r.amountCents : parseAmountToCents(r.amount)),
-            date: r.date,
-            category: r.category,
-            note: r.note,
-            createdAt: r.createdAt || r.created_at
-        }));
-        normalized.sort((a, b) => getTransactionSortKey(b) - getTransactionSortKey(a));
-        const recentTransactions = normalized.slice(0,10);
-        recentTransactions.forEach(transaction => {
-            const transactionItem = document.createElement('div');
-            transactionItem.className = 'transaction-item flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:border-gray-200';
-            transactionItem.dataset.id = transaction.id;
-            const category = transaction.category || {};
-            const isExpense = transaction.type === 'expense';
-            const bg = category.color ? category.color + '20' : '#ddd';
-            const icon = category.icon || 'question-circle';
-            const color = category.color || '#999';
-            const name = category.name || '未分类';
-            transactionItem.innerHTML = `
-                <div class="flex items-center">
-                    <div class="w-10 h-10 rounded-full flex items-center justify-center mr-3" style="background-color: ${bg}">
-                        <i class="fas fa-${icon}" style="color: ${color}"></i>
-                    </div>
-                    <div>
-                        <p class="font-medium">${name}</p>
-                        <p class="text-xs text-gray-500">${formatDate(transaction.date)}</p>
-                    </div>
-                </div>
-                <div class="text-right">
-                    <p class="font-bold ${isExpense ? 'text-danger' : 'text-secondary'}">${isExpense ? '-' : '+'}¥${Number(transaction.amount).toFixed(2)}</p>
-                    ${transaction.note ? `<p class=\"text-xs text-gray-500\">${transaction.note}</p>` : ''}
-                </div>
-            `;
-            transactionItem.addEventListener('click', () => openTransactionModal(transaction.id));
-            transactionList.appendChild(transactionItem);
-        });
-        updateFinancialSummary();
-        return;
+
+    const transactions = getTransactions();
+    if (transactionList) {
+        renderRecentTransactions(transactions);
     }
+    updateFinancialSummary();
 }
 
 // 更新财务摘要
@@ -993,7 +1446,7 @@ function buildAnalyticsSeries(transactions, period) {
             labels.push(hourLabel);
             const hourTransactions = transactions.filter(t => {
                 const d = new Date(t.date + 'T00:00:00');
-                return d >= start && d <= end && new Date(t.createdAt || t.created_at || t.date).getHours() === hour;
+                return d >= start && d <= end && new Date(getTransactionDateTime(t) || t.date).getHours() === hour;
             });
             const hourIncomeCents = hourTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + getAmountCents(t), 0);
             const hourExpenseCents = hourTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + getAmountCents(t), 0);
@@ -1234,11 +1687,7 @@ async function loadBudget() {
     let amount = 0;
     if (currentUser) {
         try {
-            const res = await apiFetch('/api/budget');
-            if (res.ok) {
-                const data = await res.json();
-                amount = Number(data.amount) || 0;
-            }
+            amount = await loadUserBudget();
         } catch (e) {
             console.error('加载预算失败', e);
         }
@@ -1263,7 +1712,11 @@ async function handleBudgetSave() {
     }
     const normalized = Math.round(value * 100) / 100;
     try {
-        localStorage.setItem('budget_guest', String(normalized));
+        if (currentUser) {
+            await saveUserBudget(normalized);
+        } else {
+            localStorage.setItem('budget_guest', String(normalized));
+        }
         currentBudgetAmount = normalized;
         if (budgetInput) budgetInput.value = currentBudgetAmount.toFixed(2);
         updateBudgetUI();
@@ -1322,16 +1775,11 @@ async function handleExport(format) {
 }
 
 async function getTransactionsForExport() {
-    const key = 'transactions_guest';
-    const raw = localStorage.getItem(key);
-    if (!raw) return { transactions: [], source: 'guest' };
-    try {
-        const arr = JSON.parse(raw);
-        return { transactions: Array.isArray(arr) ? arr : [], source: 'guest' };
-    } catch (e) {
-        console.error('解析本地交易数据失败', e);
-        return { transactions: [], source: 'guest' };
+    if (currentUser) {
+        if (transactionsCache.length === 0) await loadUserTransactions();
+        return { transactions: getTransactions(), source: 'supabase' };
     }
+    return { transactions: normalizeGuestTransactions(), source: 'guest' };
 }
 
 function prepareExportRows(transactions) {
@@ -1543,6 +1991,7 @@ function renderAllTransactions() {
             date: t.date,
             category: t.category || { name: '未分类', icon: 'question-circle', color: '#999' },
             note: t.note || '',
+            transactionAt: getTransactionDateTime(t),
             createdAt: t.createdAt || t.created_at
         }))
         .sort((a, b) => getTransactionSortKey(b) - getTransactionSortKey(a));
@@ -1752,30 +2201,3 @@ if (document.readyState === 'loading') {
 } else {
     init();
 }
-
-// ----------------- 游客初始示例数据（仅在无数据时生成一次） -----------------
-function initializeGuestTransactions() {
-    const key = 'transactions_guest';
-    let existing = [];
-    try { existing = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { existing = []; }
-    if (Array.isArray(existing) && existing.length > 0) return; // 已有数据不覆盖
-    const today = new Date();
-    const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    const daysAgo = n => { const d = new Date(today); d.setDate(d.getDate()-n); return d; };
-    const samples = [
-        { type:'income', category: INCOME_CATEGORIES.find(c=>c.id==='salary'), amountCents: 800000, note:'工资', date: fmt(daysAgo(10)) },
-        { type:'expense', category: EXPENSE_CATEGORIES.find(c=>c.id==='food'), amountCents: 4500, note:'午餐', date: fmt(daysAgo(3)) },
-        { type:'expense', category: EXPENSE_CATEGORIES.find(c=>c.id==='transport'), amountCents: 1200, note:'公交', date: fmt(daysAgo(2)) },
-        { type:'expense', category: EXPENSE_CATEGORIES.find(c=>c.id==='shopping'), amountCents: 25900, note:'网购衣物', date: fmt(daysAgo(1)) },
-        { type:'income', category: INCOME_CATEGORIES.find(c=>c.id==='bonus'), amountCents: 200000, note:'季度奖金', date: fmt(daysAgo(5)) }
-    ].map(s => ({
-        id: (Date.now() + Math.random()).toString(),
-        createdAt: new Date().toISOString(),
-        amount: centsToNumber(s.amountCents),
-        ...s
-    }));
-    localStorage.setItem(key, JSON.stringify(samples));
-}
-
-// 在 init 之前调用示例初始化（确保分类常量已可用）
-initializeGuestTransactions();

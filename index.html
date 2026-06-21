@@ -46,6 +46,8 @@
             </nav>
             <div class="flex items-center space-x-2">
                 <span id="currentUserDisplay" class="text-sm text-gray-600">游客</span>
+                <button id="authOpenBtn" class="px-3 py-1.5 text-sm border border-primary text-primary rounded-lg transition-custom hover:bg-primary hover:text-white">登录/注册</button>
+                <button id="signOutBtn" class="hidden px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50">退出登录</button>
             </div>
         </div>
     </header>
@@ -118,6 +120,8 @@
         </section>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

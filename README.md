@@ -8,6 +8,7 @@
 - **Vanilla JavaScript**：业务逻辑、状态管理、事件绑定。
 - **Font Awesome**：分类与功能图标。
 - **Chart.js**：趋势、分类、比例与对比图表。
+- **Supabase Auth / Postgres / RLS**：登录用户的账号认证、云端交易与预算数据隔离。
 
 ## 3. 数据模型
 ### 3.1 本地存储键
@@ -40,7 +41,10 @@
 }
 ```
 
-### 3.4 金额处理策略
+### 3.4 登录用户云端数据
+登录后交易写入 Supabase `transactions` 表，预算写入 `budgets` 表。前端只使用 `supabase-config.js` 中的 anon key；必须先在 Supabase SQL Editor 执行 `supabase/schema.sql`，启用 RLS 后每个用户只能操作 `auth.uid() = user_id` 的行。
+
+### 3.5 金额处理策略
 统一通过 `parseAmountToCents()` / `centsToNumber()` 保证计算阶段不受浮点误差影响；所有统计、图表、百分比均基于 `amountCents` 聚合后再格式化展示。
 
 ## 4. 模块与职责
